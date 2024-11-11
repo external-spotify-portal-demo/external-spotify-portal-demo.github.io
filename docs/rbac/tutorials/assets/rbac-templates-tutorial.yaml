@@ -1,0 +1,113 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-a
+  description: Team A
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-b
+  description: Team B
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: architects
+  description: Architect
+spec:
+  type: team
+  children: []
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: alpha-template
+  title: Alpha Template
+  description: Template with Alpha tag
+  tags:
+    - alpha
+spec:
+  owner: team-a
+  type: tutorial
+  steps:
+    - action: debug:log
+      id: write-debug-line
+      name: Write "Hello Backstage!" log line
+      input:
+        message: Hello Backstage!  
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: beta-template
+  title: Beta Template
+  description: Template with Beta tag
+  tags:
+    - beta
+spec:
+  owner: team-a
+  type: tutorial
+  steps:
+    - action: debug:log
+      id: write-debug-line
+      name: Write "Hello Backstage!" log line
+      input:
+        message: Hello Backstage!  
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: other-teams-template
+  title: Other Team's Beta Template
+  description: Template owned by a different team with a Beta tag
+  tags:
+    - beta
+spec:
+  owner: team-b
+  type: tutorial
+  steps:
+    - action: debug:log
+      id: write-debug-line
+      name: Write "Hello Backstage!" log line
+      input:
+        message: Hello Backstage!  
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: ga-template
+  title: RTW Template
+  description: Template with GA tag
+  tags:
+    - ga
+spec:
+  owner: team-a
+  type: tutorial
+  steps:
+    - action: debug:log
+      id: write-debug-line
+      name: Write "Hello Backstage!" log line
+      input:
+        message: Hello Backstage!
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: awanlin
+  annotations:
+    'github.com/user-login': awanlin
+    'ghe.spotify.net/user-login': awanlin
+spec:
+  profile:
+    displayName: André Wanlin
+    email: awanlin@spotify.com
+    picture: https://avatars.githubusercontent.com/u/67169551?v=4
+  memberOf: [team-a, team-b, architects] 

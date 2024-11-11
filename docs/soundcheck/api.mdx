@@ -1,0 +1,940 @@
+---
+sidebar_position: 4
+title: 'API Reference'
+---
+
+## Checks API
+
+Use the Checks API to:
+
+- List all checks
+- Get a check by id
+- Execute a check against one more entities.
+
+Each API call is discussed in detail below.
+
+NOTE: Your environment may not have checks specified in the app-config.yaml file. Here is
+a sample configuration with two checks defined. The first is checking a fact collected by the
+SCM plugin for the existence of a README.md file at the root level of a repository. The second
+analyzes the metadata returned by the catalog fact collector for the existence of either an internal
+or external metadata tag.
+
+```yaml
+soundcheck:
+  checks:
+    - id: has_required_tags
+      rule:
+        any:
+          - factRef: catalog:default/entity_descriptor
+            path: $.metadata.tags
+            operator: contains
+            value: internal
+          - factRef: catalog:default/entity_descriptor
+            path: $.metadata.tags
+            operator: contains
+            value: external
+      passedMessage: |
+        Tag found, check passed.
+      failedMessage: |
+        No `internal` or `external` tag found, check failed.
+    - id: has_readme
+      rule:
+        factRef: scm:default/readme
+        path: $.exists
+        operator: equal
+        value: true
+      passedMessage: |
+        README.md was found at repository root, check passed.
+      failedMessage: |
+        README.md was not found at repository root, check failed.
+```
+
+The existence of these checks is assumed when executing
+API calls in the rest of this Checks API section.
+
+### Get a List of Checks
+
+The endpoint to get a list of checks is at /api/soundcheck/checks.
+For a local deployment, the call would look like this:
+
+`GET localhost:7007/api/soundcheck/checks`
+
+With the above check defined, hitting the /checks endpoint will yield the following output:
+
+```json
+{
+  "checks": [
+    {
+      "id": "has_required_tags",
+      "rule": {
+        "any": [
+          {
+            "factRef": "catalog:default/entity_descriptor",
+            "operator": "contains",
+            "value": "internal",
+            "path": "$.metadata.tags"
+          },
+          {
+            "factRef": "catalog:default/entity_descriptor",
+            "operator": "contains",
+            "value": "external",
+            "path": "$.metadata.tags"
+          }
+        ]
+      },
+      "passedMessage": "Tag found, check passed.\n",
+      "failedMessage": "No `internal` or `external` tag found, check failed.\n"
+    },
+    {
+      "id": "has_readme",
+      "rule": {
+        "factRef": "scm:default/readme",
+        "operator": "equal",
+        "value": true,
+        "path": "$.exists"
+      },
+      "passedMessage": "README.md was found at repository root, check passed.\n",
+      "failedMessage": "README.md was not found at repository root, check failed.\n"
+    }
+  ]
+}
+```
+
+### Get a Check by ID
+
+The endpoint to get a single check by ID is at /api/soundcheck/checks/:checkId.
+For a local deployment, the call would look like this:
+
+`GET localhost:7007/api/soundcheck/checks/has_readme`
+
+where 'has_readme' above is the check id, which was defined at the beginning of this section.
+
+Executing the call above results in the following output:
+
+```json
+{
+  "check": {
+    "id": "has_readme",
+    "rule": {
+      "factRef": "scm:default/readme",
+      "operator": "equal",
+      "value": true,
+      "path": "$.exists"
+    },
+    "passedMessage": "README.md was found at repository root, check passed.\n",
+    "failedMessage": "README.md was not found at repository root, check failed.\n"
+  }
+}
+```
+
+### Trigger a Set of Checks to Execute
+
+This endpoint allows for a set of checks to be executed in soundcheck. To execute a set of checks,
+POST to:
+
+`POST localhost:7007/api/soundcheck/checks/execute`
+
+The POST request takes a json request body composed of one of four sets of parameters as follows:
+
+1.) An array of `checkIds` and an array of `entityRefs`:
+
+```json
+{
+  "entityRefs": ["component:default/queue-proxy", "component:default/searcher"],
+  "checkIds": ["has_required_tags", "has_readme"]
+}
+```
+
+POSTing the above request results in output like the following:
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "component:default/queue-proxy",
+      "timestamp": "2023-02-15T19:33:15.945Z",
+      "checkId": "has_required_tags",
+      "state": "failed",
+      "details": {
+        "notes": {
+          "type": "notes",
+          "data": "No `internal` or `external` tag found, check failed.\n"
+        }
+      }
+    },
+    {
+      "entityRef": "component:default/searcher",
+      "timestamp": "2023-02-15T19:33:15.945Z",
+      "checkId": "has_required_tags",
+      "state": "failed",
+      "details": {
+        "notes": {
+          "type": "notes",
+          "data": "No `internal` or `external` tag found, check failed.\n"
+        }
+      }
+    }
+  ]
+}
+```
+
+Note that the response above has no results for the 'has_readme' check, this is because that check
+does not apply to the given components and thus is not executed.
+
+2.) An array of `checkIds` and a `filter`:
+
+```json
+{
+  "checkIds": ["has_required_tags", "has_readme"],
+  "filter": { "metadata.tags": "java" }
+}
+```
+
+This will execute the given list of checks against all entities that match the filter, and return an
+output similar to the following, which has been truncated for brevity:
+
+```json
+{
+    "results": [
+        {
+            "entityRef": "component:default/artist-lookup",
+            "timestamp": "2023-02-15T20:24:40.473Z",
+            "checkId": "has_required_tags",
+            "state": "failed",
+            "details": {
+                "notes": {
+                    "type": "notes",
+                    "data": "No `internal` or `external` tag found, check failed.\n"
+                }
+            }
+        },
+        ...
+      ]
+}
+```
+
+3.) A single `check` which is a `FactCheckerSchema` and an array of `entityRefs`:
+
+```json
+{
+  "check": {
+    "id": "has_required_tags",
+    "rule": {
+      "factRef": "catalog:default/entity_descriptor",
+      "path": "$.metadata.tags",
+      "operator": "contains",
+      "value": "internal"
+    }
+  },
+  "entityRefs": ["component:default/queue-proxy", "component:default/searcher"]
+}
+```
+
+This will execute the supplied check against the given list of entities, and return a results output
+like the following, where each entry describes the entity and the result of the check:
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "component:default/queue-proxy",
+      "timestamp": "2023-02-15T20:43:44.990Z",
+      "checkId": "has_required_tags",
+      "state": "failed"
+    },
+    {
+      "entityRef": "component:default/searcher",
+      "timestamp": "2023-02-15T20:43:44.990Z",
+      "checkId": "has_required_tags",
+      "state": "failed"
+    }
+  ]
+}
+```
+
+4.) A single `check` which is a `FactCheckerSchema` and `filter`:
+
+```json
+{
+  "check": {
+    "id": "has_required_tags",
+    "rule": {
+      "factRef": "catalog:default/entity_descriptor",
+      "path": "$.metadata.tags",
+      "operator": "contains",
+      "value": "internal"
+    }
+  },
+  "filter": { "metadata.tags": "java" }
+}
+```
+
+This will execute the given check against all entities matching the filter, and return an array of results
+describing the result of the check against all entities which passed the filter:
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "component:default/artist-lookup",
+      "timestamp": "2023-02-15T20:49:11.601Z",
+      "checkId": "has_required_tags",
+      "state": "failed"
+    },
+    {
+      "entityRef": "component:default/playback-order",
+      "timestamp": "2023-02-15T20:49:11.601Z",
+      "checkId": "has_required_tags",
+      "state": "failed"
+    },
+    {
+      "entityRef": "component:default/podcast-api",
+      "timestamp": "2023-02-15T20:49:11.601Z",
+      "checkId": "has_required_tags",
+      "state": "failed"
+    },
+    {
+      "entityRef": "template:default/springboot-template",
+      "timestamp": "2023-02-15T20:49:11.601Z",
+      "checkId": "has_required_tags",
+      "state": "failed"
+    }
+  ]
+}
+```
+
+Finally, this request also allows an optional dry-run query parameter which can be set to empty,
+`true`, or `false`.
+
+- `true` (or empty, ie: '?dryRun' with no value set) indicates that the request is indeed a dry-run,
+  and will execute the checks but will **not** persist the results.
+- `false` indicates a standard request to perform the checks and record the results.
+  This is also the default behavior if the `dryRun` parameter is not specified.
+
+## Check Results API
+
+Use the Check Results API to submit and retrieve check results to/from Soundcheck.
+
+### Submitting Results
+
+Submit check results to Soundcheck.
+
+`POST localhost:7007/api/soundcheck/results`
+
+#### Request Body
+
+See [Check Results Schema](#check-results-schema).
+
+##### Example Request Body
+
+###### Passed
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "component:default/petstore",
+      "checkId": "tests-run",
+      "state": "passed"
+    }
+  ]
+}
+```
+
+###### Failed
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "component:default/petstore",
+      "checkId": "tests-run",
+      "state": "failed",
+      "details": {
+        "notes": {
+          "data": "Tests were not executed."
+        }
+      }
+    }
+  ]
+}
+```
+
+##### Example Requests
+
+```shell
+BACKSTAGE_BACKEND=localhost:7007 && \
+curl \
+  -H 'Content-Type: application/json' \
+  "${BACKSTAGE_BACKEND}/api/soundcheck/results" \
+  --data @- << EOF
+{
+  "results": [
+    {
+      "entityRef": "component:default/petstore",
+      "checkId": "tests-run",
+      "state": "passed"
+    }
+  ]
+}
+EOF
+```
+
+```http
+POST /api/soundcheck/results HTTP/1.1
+Host: localhost:7007
+Content-Type: application/json
+Content-Length: 129
+
+{
+  "results": [
+    {
+      "entityRef": "component:default/petstore",
+      "checkId": "tests-run",
+      "state": "passed"
+    }
+  ]
+}
+```
+
+#### Responses
+
+> 200 Response
+
+[OK](https://www.rfc-editor.org/rfc/rfc7231#section-6.3.1)
+
+Returns the check results which are either new or resulted in a change of state.
+
+See [Check Results Schema](#check-results-schema).
+
+##### Example Response Body
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "string",
+      "checkId": "string",
+      "scope": "string",
+      "state": "passed",
+      "details": {
+        "notes": {
+          "type": "notes",
+          "version": 1,
+          "data": "string"
+        }
+      }
+    }
+  ]
+}
+```
+
+> 400 Response
+
+[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)
+
+Body did not match expected schema.
+
+See [Error Schema](#error-schema).
+
+##### Example Response Body
+
+```json
+{
+  "error": {
+    "name": "string",
+    "message": "string",
+    "stack": "string"
+  },
+  "request": {
+    "method": "string",
+    "url": "string"
+  },
+  "response": {
+    "statusCode": 0
+  }
+}
+```
+
+> 500 Response
+
+[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)
+
+Soundcheck encountered an unexpected condition that prevented it from fulfilling the request.
+
+See [Error Schema](#error-schema).
+
+##### Example Response Body
+
+```json
+{
+  "error": {
+    "name": "string",
+    "message": "string",
+    "stack": "string"
+  },
+  "request": {
+    "method": "string",
+    "url": "string"
+  },
+  "response": {
+    "statusCode": 0
+  }
+}
+```
+
+### Retrieving Results
+
+`GET localhost:7007/api/soundcheck/results`
+
+Returns check results for a given entity.
+
+### Query Parameters
+
+- `entityRef` _Required_. A [reference](https://backstage.io/docs/features/software-catalog/references#string-references) to the entity to retrieve check results for.
+- `checks` _Optional_. Filters check results to only those with the provided check ID(s). Accepts multiple values: `checks=A,checks=B`
+
+##### Example Requests
+
+```shell
+BACKSTAGE_BACKEND=localhost:7007 && \
+curl \
+  -H 'Accept: application/json' \
+  "${BACKSTAGE_BACKEND}/api/soundcheck/results?entityRef=component:default/petstore&checks=tests-run"
+```
+
+```http
+GET /api/soundcheck/results?entityRef=component:default/petstore&checks=tests-run HTTP/1.1
+Host: localhost:7007
+Accept: application/json
+```
+
+#### Responses
+
+> 200 Response
+
+[OK](https://www.rfc-editor.org/rfc/rfc7231#section-6.3.1)
+
+See [Check Results Schema](#check-results-schema).
+
+##### Example Response Body
+
+```json
+{
+  "results": [
+    {
+      "entityRef": "component:default/petstore",
+      "checkId": "tests-run",
+      "scope": "default",
+      "state": "failed",
+      "details": {
+        "notes": {
+          "type": "notes",
+          "version": 1,
+          "data": "Tests were not executed."
+        }
+      }
+    }
+  ]
+}
+```
+
+> 400 Response
+
+[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)
+
+Invalid or missing query parameter(s).
+
+> 500 Response
+
+[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)
+
+Soundcheck encountered an unexpected condition that prevented it from fulfilling the request.
+
+##### Example Response Body
+
+```json
+{
+  "error": {
+    "name": "string",
+    "message": "string",
+    "stack": "string"
+  },
+  "request": {
+    "method": "string",
+    "url": "string"
+  },
+  "response": {
+    "statusCode": 0
+  }
+}
+```
+
+## Facts API
+
+Use the Facts API to submit facts to Soundcheck.
+
+### Submitting Facts
+
+Submit Facts to Soundcheck.
+
+`POST localhost:7007/api/soundcheck/facts`
+
+#### Request Body
+
+See [Facts Schema](#facts-schema).
+
+##### Example Request Body
+
+```json
+{
+  "facts": [
+    {
+      "factRef": "catalog:default/petstore_metadata",
+      "entityRef": "component:default/petstore",
+      "data": {
+        "example": "petstore data"
+      },
+      "timestamp": "2023-02-06T19:33:48.590+00:00"
+    }
+  ],
+  "cache": {
+    "duration": {
+      "hours": 24
+    }
+  }
+}
+```
+
+##### Example Requests
+
+```shell
+BACKSTAGE_BACKEND=localhost:7007 && \
+curl \
+  -H 'Content-Type: application/json' \
+  "${BACKSTAGE_BACKEND}/api/soundcheck/facts" \
+  --data @- << EOF
+{
+  "facts": [
+    {
+      "factRef": "catalog:default/petstore_metadata",
+      "entityRef": "component:default/petstore",
+      "data": {
+        "example": "petstore data"
+      },
+      "timestamp": "2023-02-06T19:33:48.590+00:00"
+    }
+  ],
+  "cache": {
+    "duration": {
+      "hours": 24
+    }
+  }
+}
+EOF
+```
+
+```http
+POST /api/soundcheck/results HTTP/1.1
+Host: localhost:7007
+Content-Type: application/json
+Content-Length: 129
+
+{
+  "facts": [
+    {
+      "factRef": "catalog:default/petstore_metadata",
+      "entityRef": "component:default/petstore",
+      "data": {
+        "example": "petstore data"
+      },
+      "timestamp": "2023-02-06T19:33:48.590+00:00"
+    }
+  ],
+  "cache": {
+    "duration": {
+      "hours": 24
+    }
+  }
+}
+```
+
+#### Responses
+
+> 200 Response
+
+[OK](https://www.rfc-editor.org/rfc/rfc7231#section-6.3.1)
+
+Returns the factsRefs which were submitted.
+
+##### Example Response Body
+
+```json
+{
+  "factRefs": ["catalog:default/petstore_metadata"]
+}
+```
+
+> 400 Response
+
+[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)
+
+Body did not match expected schema.
+
+See [Error Schema](#error-schema).
+
+> 500 Response
+
+[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)
+
+Soundcheck encountered an unexpected condition that prevented it from fulfilling the request.q
+
+## Track API
+
+Use the Track API to:
+
+- List all tracks
+- Get a track by ID
+
+Each API call is discussed in detail below.
+
+### Get a List of Tracks
+
+The endpoint to get a list of tracks is at `/api/soundcheck/tracks`.
+For a local deployment, the call would look like this:
+
+`GET localhost:7007/api/soundcheck/tracks`
+
+#### Query Parameters
+
+- `tracks` _Optional_. Filters tracks to only those with the provided track ID(s). Accepts multiple values: `tracks=A,tracks=B`.
+- `entityRef` _Optional_. A [reference](https://backstage.io/docs/features/software-catalog/references#string-references) to the entity to retrieve applicable tracks for. When this query param is provided,
+  only tracks (and checks) which are applicable to this entity are returned.
+- `onlyApplicableChecks` _Optional_. Used in conjunction with the `entityRef` query params, determined whether all
+  checks in a track are included in the response or only checks which are applicable to the given entity.
+
+The response body has `tracks` containing all tracks.
+
+```json
+{
+  "tracks": [
+    ...
+  ]
+}
+```
+
+### Get a Track
+
+The endpoint to get a track is at `/api/soundcheck/track/:trackId`. Where `:trackId` is the ID of the track you would
+like to retrieve.
+
+For a local deployment, the call would look like this:
+`GET localhost:7007/api/soundcheck/track/:trackId`
+
+#### Query Parameters
+
+- `entityRef` _Optional_. A [reference](https://backstage.io/docs/features/software-catalog/references#string-references) to the entity to validate applicability for. When this query param is provided,
+  the requested track is only returned if it is applicable to the provided entity, otherwise `{}` is returned.
+- `onlyApplicableChecks` _Optional_. Used in conjunction with the `entityRef` query params, determined whether all
+  checks in the track are included in the response or only checks which are applicable to the given entity.
+
+The response body has `track` containing the requested track.
+
+```json
+{
+  "track": {
+    ...
+  }
+}
+```
+
+## Aggregations API
+
+Use the Aggregations API to get aggregations from Soundcheck.
+
+### Requesting Aggregations
+
+Get an aggregation from Soundcheck
+
+`POST localhost:7007/api/soundcheck/aggregations`
+
+#### Request Body
+
+See [Facts Schema](#facts-schema).
+
+##### Example Aggregation Request Body
+
+```json
+{
+  "type": "individualCheckPassRates",
+  "filter": {
+    "numberOfDays": 3,
+    "entityKinds": {
+      "included": ["Component"]
+    },
+    "entityTypes": {
+      "included": ["service"]
+    }
+  }
+}
+```
+
+##### Example Aggregation Requests
+
+```shell
+BACKSTAGE_BACKEND=localhost:7007 && \
+curl \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer {your authorization token}'\
+  "${BACKSTAGE_BACKEND}/api/soundcheck/aggregations" \
+  --data @- << EOF
+{
+    "type": "individualCheckPassRates",
+    "filter": {
+        "numberOfDays": 3,
+        "entityKinds": {
+            "included": ["Component"]
+        },
+        "entityTypes": {
+            "included": ["service"]
+        }
+    }
+}
+EOF
+```
+
+#### Aggregation Responses
+
+> 200 Response
+
+[OK](https://www.rfc-editor.org/rfc/rfc7231#section-6.3.1)
+
+Returns the requested Aggregation.
+
+##### Example Aggregation Response Body
+
+```json
+"individualCheckPassRates": [
+        {
+            "id": "alerting-configured",
+            "snapshotPassRate": 100,
+            "trendPassRates": [
+                0,
+                100,
+                100
+            ],
+            "checkName": "Alerting is configured",
+            "checkDescription": "Components must have an on-call rotation identifier configured in component-info.yaml. This enables consumers of your component to ping an on-call goalie from Backstage in the event of an incident.\nThis check will NOT look to see what level of coverage your rotation provides; you may have a round-the-clock rotation, or a 10am-5pm local time rotation, whatever is most appropriate for your component.\n"
+        },
+        ...
+]
+```
+
+> 400 Response
+
+[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)
+
+If the input did not match the schema.
+
+> 500 Response
+
+[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)
+
+Soundcheck encountered an unexpected condition that prevented it from fulfilling the request.q
+
+## Schemas
+
+#### Check Results Schema
+
+- `results` An array of [check results](#check-result-schema).
+
+#### Check Result Schema
+
+- `entityRef` A [reference](https://backstage.io/docs/features/software-catalog/references#string-references) to the entity that the check result is for.
+- `checkId` The unique identifier of the check that the result is for.
+- `state` The check results state. One of `passed` or `failed`.
+- `scope` _Optional_. The scope within which this check was performed. Defaults to `default`.
+- `details` _Optional_. Additional details on the check result. Currently only supports `notes`.
+  - `notes`
+    - `type`: _Optional_. Type of the check result details, currently only supports `notes`. Defaults to `notes`.
+    - `version`: _Optional_. Version of the check result details, can be any number. Defaults to `1`.
+    - `data`: Markdown providing additional context on the check result (e.g., why it failed).
+
+#### Facts Schema
+
+- `facts` An array of [facts](#fact-schema).
+- `cache` A [cache config](#cache-config-schema).
+
+#### Fact Schema
+
+- `factRef` A unique [reference](https://backstage.io/docs/features/software-catalog/references#string-references) to the fact.
+- `entityRef` A [reference](https://backstage.io/docs/features/software-catalog/references#string-references) to the entity this fact is collected against.
+- `data` The data collected of the fact's data schema.
+- `timestamp` The date/time at which this fact was collected.
+-
+
+#### Cache Config Schema
+
+- A boolean
+  - `true` - Indicates that the fact should be cached forever.
+  - `false` - Indicates that the fact should not be cached.
+- Or an object containing a `duration` field
+  - `duration` Specifies the cache duration. An object with one or more of the following:
+    - `years`: _Optional_. The number of years.
+    - `months`: _Optional_. The number of months.
+    - `weeks`: _Optional_. The number of weeks.
+    - `days`: _Optional_. The number of days.
+    - `hours`: _Optional_. The number of hours.
+    - `minutes`: _Optional_. The number of minutes;
+    - `seconds`: _Optional_. The number of seconds.
+    - `milliseconds`: _Optional_. The number of milliseconds.
+
+#### Error Schema
+
+- `error`
+  - `name` Name of the error.
+  - `message` Error message.
+  - `stack` Stack trace.
+  - `request`
+    - `method` HTTP request method.
+    - `url` URL
+  - `response`
+    - `statusCode` [HTTP status code](https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html).
+
+#### Aggregation Schema
+
+- `type`: The type of aggregation to perform, one of:
+  - `individualCheckPassRates`
+  - `overallCheckPassRates`
+  - `individualEntitiesPassRates`
+  - `overallEntityPassRates`
+  - `individualTracksPassRates`
+  - `overallTrackPassRates`
+  - `groupsPassRates`
+- `filter`: An [Aggregation_Filter](#aggregation-filter-schema) to limit how the aggregation is
+  calculated.
+
+##### Aggregation Filter Schema
+
+All fields are optional.
+
+- `entityRefs`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing those [entity references](https://backstage.io/docs/features/software-catalog/references) to include/exclude from the aggregation.
+- `checkIds`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing those identifiers of the checks to include/exclude from the aggregation.
+- `tracks`: an array of [Aggregation Track Filters](#aggregation-track-filter). Only check results from the specified tracks and levels will be included in the aggregation.
+- `scope`: Only results with the specified scope will be included in the aggregation.
+- `numberOfDays`: A numeric value indicating how many days of history to include in the aggregation.
+- `entityKinds`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing the [kinds](https://backstage.io/docs/features/software-catalog/descriptor-format#apiversion-and-kind-required) of entities to include/exclude from the aggregation.
+- `entityLifecycles`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing the [lifecycles](https://backstage.io/docs/features/software-catalog/descriptor-format#speclifecycle-required) of entities to include/exclude from the aggregation.
+- `entityTypes`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing the [types](https://backstage.io/docs/features/software-catalog/descriptor-format#spectype-required-1) of entities to include/exclude from the aggregation.
+- `checkOwnerFilters`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing [group references](https://backstage.io/docs/features/software-catalog/references). Only the results of checks owned/not owned by the given owners will be included in the aggregation.
+- `entityOwnerFilters`: an [InclusionFilter](#aggregation-inclusionfilter-schema) containing [group references](https://backstage.io/docs/features/software-catalog/references). Only entities owned/not owned by the given owners will be included in the aggregation.
+
+##### Aggregation InclusionFilter Schema
+
+- `included`: An optional string or array of strings.
+- `excluded`: An optional string or array of strings.
+
+##### Aggregation Track Filter
+
+- `trackId`: The name of the track. Required.
+- `levels`: An array of level ordinals. Optional.

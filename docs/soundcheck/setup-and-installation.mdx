@@ -1,0 +1,470 @@
+---
+title: 'Installation & Setup'
+sidebar_position: 1
+---
+
+## Backend Setup
+
+The next steps describe how to install the Soundcheck backend plugin.
+For a more guided tutorial, see [Soundcheck end-to-end](tutorials/end-to-end).
+
+### Install the backend package
+
+Add the Soundcheck packages as dependencies to your Backstage instance
+
+```sh
+yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend
+```
+
+### Setup Soundcheck backend
+
+The Soundcheck backend handles the ingestion of check results in the database,
+and serves data to the Soundcheck UI.
+
+1. Create a new file, `packages/backend/src/plugins/soundcheck.ts` with the following content:
+
+```ts title=packages/backend/src/plugins/soundcheck.ts
+import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+import { Router } from 'express';
+import { PluginEnvironment } from '../types';
+
+export default async function createPlugin(
+  env: PluginEnvironment
+): Promise<Router> {
+  return SoundcheckBuilder.create({ ...env }).build();
+}
+```
+
+2. Set up the Soundcheck backend router in `/packages/backend/src/index.ts`. You will need to import the module from the previous step, create a new plugin environment for Soundcheck and add the router to the express app.
+
+```ts title=packages/backend/src/index.ts
+...
+
+import proxy from './plugins/proxy';
+import techdocs from './plugins/techdocs';
+import search from './plugins/search';
+// highlight-next-line
+import soundcheck from './plugins/soundcheck';
+
+...
+
+const techdocsEnv = createEnv('techdocs');
+const searchEnv = createEnv('search');
+const appEnv = createEnv('app');
+/* highlight-next-line */
+const soundcheckEnv = createEnv('soundcheck');
+
+...
+
+apiRouter.use('/techdocs', await techdocs(techdocsEnv));
+apiRouter.use('/proxy', await proxy(proxyEnv));
+apiRouter.use('/search', await search(searchEnv));
+/* highlight-next-line */
+apiRouter.use('/soundcheck', await soundcheck(soundcheckEnv));
+
+...
+```
+
+#### New Backend System
+
+If you are using the New Backend System, you can use the [`legacyPlugin` helper function](https://backstage.io/docs/reference/backend-common.legacyplugin/) to integrate the plugin backend with your Backstage backend.
+
+```ts title=packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+// highlight-next-line
+import { legacyPlugin } from '@backstage/backend-common';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-app-backend/alpha'));
+// highlight-next-line
+backend.add(legacyPlugin('soundcheck', import('./plugins/soundcheck')));
+// ...
+
+backend.start();
+```
+
+### Add track config
+
+Tracks, levels, and checks are driven by config and will be covered in detail in the [Core-concepts section](/spotify-for-backstage-docs/category/core-concepts).
+
+1. Create `soundcheck-programs.yaml` in the root of your Backstage repository and fill in all your checks and tracks.
+   A simple example program with a single level and check is listed below.
+
+   **Note:** this file will be loaded at runtime along with the rest of your Backstage configuration files, so make sure it's available in deployed environments in the same way as your `app-config.yaml` files.
+
+```yaml title=soundcheck-programs.yaml
+- id: test-certified
+  name: Test Certified
+  ownerEntityRef: group:default/example-owner
+  description: >
+    Improve quality and reliability of your software component
+    by measuring the use of testing best practices.
+  documentationURL: https://www.backstage.io
+  levels:
+    - ordinal: 1
+      checks:
+        - id: tests-run
+          name: Tests run on CI
+          description: >
+            Indicates whether your system is set up correctly to run tests and
+            report the results. You must have at least one test.
+```
+
+2. Add a soundcheck field to `app-config.yaml` and reference the newly created `soundcheck-programs.yaml`
+
+```yaml title=app-config.yaml
+soundcheck:
+  programs:
+    $include: ./soundcheck-programs.yaml
+```
+
+**Note:** tracks were originally called "programs". Any reference to "program" (e.g. the reference to "programs" in the soundcheck section of `app-config.yaml`) can be thought of as a reference to a track.
+
+### Scaling & Rate Limiting (Optional)
+
+To optimize the scalability of Soundcheck, it is highly recommended to configure a Redis connection. This integration
+enables Soundcheck to efficiently distribute tasks such as fact collection and check executions across multiple
+instances of the `soundcheck-backend`.
+
+To configure Soundcheck to use Redis add the following to your `app-config.yaml` file:
+
+```yaml
+soundcheck:
+  job:
+    queues:
+      type: redis
+      host: <redis-host>
+      port: <redis-port>
+      username: <redis-username>
+      password: <redis-password>
+```
+
+#### Rate Limiting
+
+Soundcheck offers configurable rate limiting to control the frequency of fact collections on a per-fact collector basis.
+This feature is useful when a fact collector leverages a third-party API that imposes rate limits (e.g., GitHub API).
+
+Configure rate limits for specific fact collectors by enhancing your app-config.yaml file with the following details:
+
+```yaml
+soundcheck:
+  job:
+    workers:
+      <fact_collector_id>:
+        limiter:
+          max: <max_number_of_jobs>
+          duration: <duration_>
+```
+
+The `max` parameter establishes an upper threshold for the number of fact collection jobs Soundcheck will perform from
+with the specified collector within the given duration. Should the job count exceed this limit, additional jobs are
+queued.
+
+The `duration` parameter determines the time window during which the specified maximum number of collection jobs (set by
+`max`) is enforced. After this duration, the count resets, allowing Soundcheck to process a new set of collection jobs
+up to the specified maximum.
+
+For example we can limit Soundcheck to only requesting 5000 fact collections per hour from the `github` fact
+using the following configuration:
+
+```yaml
+soundcheck:
+  job:
+    workers:
+      github:
+        limiter:
+          max: 5000
+          duration: 3600000
+```
+
+### Slack Notifications (Optional)
+
+To enable Slack notifications, Slack needs to be integrated within Soundcheck.
+
+> Note: This is an optional Soundcheck feature. If you choose not to enable this feature, you can skip the instructions below. To integrate Slack within Soundcheck for the first time, follow the steps below.
+
+#### Manifest file
+
+To create a custom Slack app, use the manifest file provided below. The provided file lists the scopes required for Soundcheck notifications.
+
+Refer to Slack's [Create apps using manifests](https://api.slack.com/reference/manifests#creating_apps) documentation to learn more.
+
+The first step in the Slack documentation linked above contains a [Click to create Slack app](https://api.slack.com/apps?new_app=1) button that will allow you to begin the Slack app creation process. Clicking on the button will open a **Create an app** prompt with two options: **from scratch** or
+**from an app manifest**. Select **from an app manifest** in order to use the manifest provided below.
+
+Step 1 of 3 in the Slack app creation process consists of picking a workspace to develop your Slack app in. Step 2 of 3 will prompt you to enter the app manifest. Click on the **YAML** tab and copy/paste the manifest below.
+
+```yaml
+# This file is an example Slack app manifest used for installing a custom app
+# in your workspace to deliver Soundcheck notifications. For more information,
+# see https://api.slack.com/reference/manifests
+display_information:
+  name: Soundcheck for Backstage
+  description: Enables notifications from Soundcheck for Backstage in Slack.
+  background_color: '#9BF0E1'
+features:
+  bot_user:
+    display_name: Soundcheck for Backstage
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      # scopes needed to read user information
+      - users:read
+      - users:read.email
+      # scopes needed to send messages
+      - chat:write
+      - chat:write.public
+settings:
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+```
+
+Step 3 of 3 displays an app creation review summary. Click on the **Create** button to complete the process.
+
+#### Tokens
+
+A custom Slack app, an app token, an oauth token, and a signing secret must be created to set up Slack integration.
+
+- **app token:** The app token can be found, or generated, in the **App-Level Token** box. If you are generating an app token for the first time, be sure to give it the `connections:write` scope.
+
+- **oauth token:** The oauth token can be found in the **Oauth & Permissions** section of the **Oauth tokens for Your Workspace** box. It should look something like `xoxb-...`.
+
+- **signing secret:** Go to the **Basic Information** section of your Slack app. The signing secret can be found in the **App Credentials** box.
+
+Next, the Slack app token, oauth token, and signing secret must be added to your `app-config.yaml` (or equivalent) file.
+
+```yaml
+soundcheck:
+  # ...
+  slack:
+    token: xoxb-*************-*************-************************ #aka "oauth token", or "bot token"
+    appToken: xapp-*-***********-*************-****************************************************************
+    signingSecret: ********************************
+  # ...
+```
+
+#### Socket Mode
+
+Socket mode must be enabled for your Slack app. Under **Settings**, click on **Socket Mode**. Then, click on the **Enable Socket Mode** switch to toggle it on. Finally, make sure that the **Interactivity & Shortcuts** feature is enabled.
+
+#### Adding the Slack app to a Slack channel
+
+In order to get Slack notifications from your Slack app, it must be added to a Slack channel. The Slack channel can be either a public or a private channel that lives in the same workspace that you selected when creating the Slack app.
+
+Right-click on the desired channel in Slack, select **View Channel Details**, click on the **Integrations** tab, and then click on **Add Apps**. Search for your Slack app by name, find it in the search results, and then click on the **Add** button.
+
+## Frontend Setup
+
+### Install the frontend package
+
+```sh
+yarn workspace app add @spotify/backstage-plugin-soundcheck
+```
+
+### Setup the Soundcheck Entity Content Page & Card
+
+The Soundcheck Entity Page consists of a view on the [Catalog Entity page](https://github.com/backstage/backstage/blob/master/packages/app/src/components/catalog/EntityPage.tsx), and lists
+all the related certifications, levels, checks and check results for a
+particular entity.
+
+The code below adds the Soundcheck card to the overview tab for all component types.
+The Soundcheck entity content component needs to be added to each relevant
+page type within your Backstage `EntityPage`. The snippets below insert the
+card/tabs at the end of their respective containers, but it's fine to reorder
+them as you wish. When reordering the card in particular, consider whether the
+[fluid layout](https://v4.mui.com/components/grid/#fluid-grids) of the grid
+should be adjusted to ensure the cards fill each row.
+
+```tsx title=packages/app/src/components/catalog/EntityPage.tsx
+...
+// highlight-start
+import {
+  EntitySoundcheckContent,
+  EntitySoundcheckCard,
+} from '@spotify/backstage-plugin-soundcheck';
+// highlight-end
+
+...
+
+const overviewContent = (
+  <Grid container spacing={3} alignItems='stretch'>
+    {/* existing cards... */}
+
+    {/* highlight-start */}
+    <Grid item md={6} xs={12}>
+      <EntitySoundcheckCard />
+    </Grid>
+    {/* highlight-end */}
+  </Grid>
+);
+
+...
+
+// Repeat this for all component entity pages which use the `overviewContent`
+const serviceEntityPage = (
+  <EntityLayout>
+    {/* existing tabs... */}
+
+    {/* highlight-start */}
+    <EntityLayout.Route path='/soundcheck' title='Soundcheck'>
+      <EntitySoundcheckContent />
+    </EntityLayout.Route>
+    {/* highlight-end */}
+  </EntityLayout>
+);
+```
+
+### Setup Soundcheck Routing Page
+
+Add a new Route element with the path `/soundcheck` and element of `<SoundcheckRoutingPage />`.
+
+`<SoundcheckRoutingPage />` supports the following props:
+
+```tsx
+{
+  title: string; // OPTIONAL - Defaults to 'Soundcheck' when excluded
+}
+```
+
+The route should look something like this:
+
+```tsx title=packages/app/src/App.tsx
+// highlight-next-line
+import { SoundcheckRoutingPage } from '@spotify/backstage-plugin-soundcheck';
+...
+
+const routes = (
+  <FlatRoutes>
+    {/* existing routes... */}
+
+    {/* highlight-start */}
+    <Route
+      path='/soundcheck'
+      element={<SoundcheckRoutingPage title='My Optional Title' />}
+    />
+    {/* highlight-end */}
+  </FlatRoutes>
+);
+```
+
+### Add a sidebar item
+
+Add a sidebar menu item that routes to the path setup in the previous step
+
+```tsx title=packages/app/src/components/Root.tsx
+// highlight-next-line
+import DoneAllIcon from '@material-ui/icons/DoneAll';
+...
+
+export const Root = ({ children }: PropsWithChildren<{}>) => (
+  <SidebarPage>
+    <Sidebar>
+      <SidebarLogo />
+      {/* existing sidebar items... */}
+
+      <SidebarScrollWrapper>
+        {/* existing sidebar items... */}
+
+        {/* highlight-next-line */}
+        <SidebarItem icon={DoneAllIcon} to='soundcheck' text='Soundcheck' />
+      </SidebarScrollWrapper>
+    </Sidebar>
+  </SidebarPage>
+);
+```
+
+### Install Soundcheck Group Content Page
+
+The Soundcheck Group Content Page is a Soundcheck Overview Page that can be pinned to a selected group entity.
+It can only be added to a group page type within your Backstage `EntityPage`.
+
+```tsx title=packages/app/src/components/catalog/EntityPage.tsx
+// highlight-next-line
+import { GroupSoundcheckContent } from '@spotify/backstage-plugin-soundcheck';
+
+const groupPage = (
+  <EntityLayout>
+    {/* existing tabs... */}
+
+    {/* highlight-start */}
+    <EntityLayout.Route path='/soundcheck' title='Soundcheck'>
+      <GroupSoundcheckContent />
+    </EntityLayout.Route>
+    {/* highlight-end */}
+  </EntityLayout>
+);
+```
+
+### Check everything is working
+
+If you have followed all steps up to this point, Soundcheck is set up and running. The backend successfully starts up if the program config is valid, and when you navigate to a catalog page for one of the entity types you configured above, you'll see the Soundcheck tab containing the applicable tracks for the current entity. If you visit `/soundcheck` or click the "Soundcheck" entry on the sidebar, you should see the overview page.
+
+## RBAC Integration
+
+Soundcheck's No-Code UI integrates with Backstage's permission framework and the [RBAC plugin](https://backstage.spotify.com/plugins/rbac/). This integration enables restricting which users/groups can Create, Read, Update, or Delete (CRUD) Soundcheck checks and tracks.
+
+The recommended approaches to setting access controls for this plugin require the Backstage permissions framework. You may have set up this up already when configuring other plugins from the Spotify bundle, but if not, [follow this guide to setting up the permissions framework](https://backstage.io/docs/permissions/overview).
+
+### Option 1: Using the RBAC plugin (Recommended)
+
+_"The [RBAC plugin](https://backstage.spotify.com/plugins/rbac) is a no-code management UI for restricting access to plugins, routes, and data within Backstage. Admins can quickly define roles, assign users and groups, and configure permissions to encode authorization decisions according to your organization's evolving security and compliance needs."_
+
+![Soundcheck RBAC](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-rbac-setup.png)
+
+> Note: For the Soundcheck permissions to display as you see above make sure you have added `soundcheck` to the list of `permissionedPlugins` in your `app-config.yaml`. For more details, [click here](/spotify-for-backstage-docs/rbac/setup-and-installation#configure-permissioned-plugins).
+
+Take a look at the [RBAC Installation documentation](/spotify-for-backstage-docs/rbac/setup-and-installation) for details.
+
+### Option 2: Using custom policy handlers
+
+It's also possible to define [custom handlers](https://backstage.io/docs/permissions/writing-a-policy) for policy queries made by Pulse.
+
+```ts title=packages/backend/src/plugins/permissions.ts
+class ExamplePolicy implements PermissionPolicy {
+  async handle(request: PolicyQuery): Promise<PolicyDecision> {
+    if (request.permission.name === 'soundcheck.track.read') {
+      const isAllowed = await someEvaluationFunction();
+
+      if (isAllowed) {
+        return {
+          result: AuthorizeResult.ALLOW,
+        };
+      }
+    }
+
+    return { result: AuthorizeResult.DENY };
+  }
+}
+```
+
+For more information, please refer to the [Permissions](https://backstage.io/docs/permissions/overview) documentation in Backstage.
+
+## Available Permissions
+
+The Soundcheck plugin has the following permissions that can be used to control access to the plugin and its features:
+
+| Permission                    | Description                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `soundcheck.check.create`     | Allows a user to create a check via the Soundcheck No-Code UI                                                                             |
+| `soundcheck.check.read`       | Allows a user to view the library of checks                                                                                               |
+| `soundcheck.check.update`     | Allows a user to edit a check that was created via the Soundcheck No-Code UI\*                                                            |
+| `soundcheck.check.delete`     | Allows a user to delete a existing check that was created via the Soundcheck No-Code UI\*                                                 |
+| `soundcheck.track.create`     | Allows a user to create a track via the Soundcheck UI. Also allows a user to convert a campaign to a track via the campaign archive flow. |
+| `soundcheck.track.read`       | Allows a user to view the library of tracks                                                                                               |
+| `soundcheck.track.update`     | Allows a user to edit a track that was created via the Soundcheck No-Code UI\*                                                            |
+| `soundcheck.track.delete`     | Allows a user to delete a existing track that was created via the Soundcheck No-Code UI\*                                                 |
+| `soundcheck.collector.read`   | Allows a user to view the list of fact collectors currently configured                                                                    |
+| `soundcheck.collector.update` | Allows a user to configure the facts collected by the fact collector\*\*                                                                  |
+| `soundcheck.campaign.create`  | Allows a user to create a campaign                                                                                                        |
+| `soundcheck.campaign.read`    | Allows a user to view the library of campaigns                                                                                            |
+| `soundcheck.campaign.update`  | Allows a user to update a campaign                                                                                                        |
+| `soundcheck.campaign.delete`  | Allows a user to archive AND delete a campaign                                                                                            |
+
+> \*Checks and tracks created via config are not editable within the Soundcheck UI.
+
+> \*\*Only the Github fact collector is available for configuration using the No-Code UI. If you already have a fact collector config YAML file setup, you will be unable to use the No-Code UI to configure your collector.

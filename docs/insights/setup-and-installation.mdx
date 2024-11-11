@@ -1,0 +1,429 @@
+---
+title: 'Setup & Installation'
+sidebar_position: 2
+---
+
+# Setup & Installation
+
+## Prerequisites
+
+### Configure the Sign-In Resolver
+
+To allow Insights to identify the user entity associated with the signed-in user, your **SignInResolver** must issue an identity token with a **sub** (subject) claim pointing to the user entity in the catalog corresponding to the signed-in user. Check out [Backstage user identity documentation on backstage.io](https://backstage.io/docs/auth/identity-resolver/#backstage-user-identity) for complete details on how to supplly an identity resolver.
+
+While many authentication providers handle this automatically, if you're using a custom provider, you might need to implement this behavior yourself. Refer to examples in the [Google auth sign-in resolver](https://github.com/backstage/backstage/blob/master/plugins/auth-backend/src/providers/google/provider.ts) or the [GitHub auth sign-in resolver](https://github.com/backstage/backstage/blob/master/plugins/auth-backend/src/providers/github/provider.ts). For more information on configuring a sign-in resolver, see the [identity resolver documentation on backstage.io](https://backstage.io/docs/auth/identity-resolver).
+
+## Backend Installation
+
+### Obtain the Plugin
+
+Add the Insights backend as a dependency to your Backstage backend app:
+
+```bash
+yarn workspace backend add @spotify/backstage-plugin-insights-backend
+```
+
+### Integrate the Plugin
+
+Create a new file named `packages/backend/src/plugins/backstageInsights.ts` with the following content:
+
+```ts title=packages/backend/src/backstageInsights.ts
+import { Router } from 'express';
+import { PluginEnvironment } from '../types';
+import { createRouter } from '@spotify/backstage-plugin-insights-backend';
+
+export default async function createPlugin(
+  env: PluginEnvironment
+): Promise<Router> {
+  return await createRouter({
+    ...env,
+  });
+}
+```
+
+Next, wire up the Insights backend in `packages/backend/src/index.ts`. Import the module from the previous step, create a plugin environment, and add the router to the Express app.
+
+```ts title=packages/backend/src/index.ts
+...
+
+import proxy from './plugins/proxy';
+import techdocs from './plugins/techdocs';
+import search from './plugins/search';
+// highlight-next-line
+import backstageInsights from './plugins/backstageInsights';
+
+...
+
+const techdocsEnv = createEnv('techdocs');
+const searchEnv = createEnv('search');
+const appEnv = createEnv('app');
+// highlight-next-line
+const backstageInsightsEnv = createEnv('backstageInsights');
+
+...
+
+apiRouter.use('/techdocs', await techdocs(techdocsEnv));
+apiRouter.use('/proxy', await proxy(proxyEnv));
+apiRouter.use('/search', await search(searchEnv));
+// highlight-next-line
+apiRouter.use('/backstage-insights', await backstageInsights(backstageInsightsEnv));
+```
+
+**Note:** be sure to use "backstage-insights" exactly as your route in the above file
+
+#### New Backend System
+
+If you are using the New Backend System, you can use the
+[`legacyPlugin` helper function](https://backstage.io/docs/reference/backend-common.legacyplugin/) to integrate the plugin backend with your Backstage backend.
+
+```ts title=packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+// highlight-next-line
+import { legacyPlugin } from '@backstage/backend-common';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-app-backend/alpha'));
+// highlight-next-line
+backend.add(
+  legacyPlugin('backstage-insights', import('./plugins/backstageInsights'))
+);
+// ...
+
+backend.start();
+```
+
+### Create an API Token for Your Organization
+
+To secure communication between your Backstage backend and Spotify's servers, you need to create an API token. Visit [backstage.spotify.com/account/tokens](https://backstage.spotify.com/account/tokens/) and create a token with a descriptive name, such as `backstage-insights-production-token`. Note down the token value as you'll need it in the next step.
+
+### Configure the Spotify Backstage API Token
+
+In your `app-config.yaml`, add the following entry to enable communication with Spotify's servers:
+
+```yaml title=app-config.yaml
+spotify:
+  apiToken: ${SPOTIFY_BACKSTAGE_API_TOKEN}
+```
+
+Set the `SPOTIFY_BACKSTAGE_API_TOKEN` environment variable to the API token you created earlier. Ensure that you treat this value as a secret and avoid checking it into version control.
+
+## Additional Configuration
+
+### Extra Entity Metadata Capture
+
+The Insights backend integrates with the Software Catalog to enhance analytics events with additional entity metadata. This allows filtering or grouping data based on attributes like the entity's `type`. By default, the following fields are captured on analytics events associated with catalog entities: `kind`, `metadata.namespace`, `spec.type`, `spec.lifecycle`, and `spec.owner`. To capture extra fields, provide them in the configuration. Common fields can be found in the [Catalog's YAML File Format documentation](https://backstage.io/docs/features/software-catalog/descriptor-format). You can also reference custom metadata stored on entities.
+
+```yaml title=app-config.yaml
+backstageInsights:
+  captureEntityFields:
+    - spec.someCustomField
+```
+
+Similarly, certain fields are captured on all analytics events related to the signed-in user, such as `metadata.namespace` and `spec.memberOf`. You can configure additional user metadata capture in the configuration as well:
+
+```yaml title=app-config.yaml
+backstageInsights:
+  captureIdentityFields:
+    - spec.profile.someCustomField
+```
+
+Note that the Insights backend applies redaction logic to avoid collecting personal data, but you should understand the data collected when configuring these additional fields.
+
+### Total Users Count Filter
+
+The Insights frontend uses the Software Catalog to determine the total number of users who can access Backstage. This number is essential for various dashboards and views. If the count is incorrect due to factors like retaining deactivated users or gradual rollouts, you can apply filters using an [EntityFilterQuery][efq]. Examples include counting members of a specific group or users under a certain namespace.
+
+```yaml title=app-config.yaml
+backstageInsights:
+  totalUsersEntityQueryFilter:
+    'relations.memberOf': 'group:default/rnd'
+```
+
+For more details, refer to the [EntityFilterQuery documentation on backstage.io](https://backstage.io/docs/reference/catalog-client.entityfilterquery).
+
+## Frontend Installation - Adding the Insights API
+
+### Get the Plugin
+
+Add the Insights Analytics Module as a dependency to your Backstage frontend app:
+
+```bash
+yarn workspace app add @spotify/backstage-plugin-analytics-module-insights
+```
+
+### Supply the BackstageInsights API implementation in your app
+
+This is typically done in `/packages/app/src/apis.ts`, or less often directly in the call to `createApp()`.
+
+```ts title=/packages/app/src/apis.ts
+...
+import { BackstageInsights } from '@spotify/backstage-plugin-analytics-module-insights';
+
+export const apis = [
+  ...
+  BackstageInsights.createDefaultApiFactory(),
+];
+```
+
+### Configure the Backstage Insights API
+
+Generate a random string, for example with the following terminal one-liner:
+
+```bash
+node -p 'require("crypto").randomBytes(24).toString("base64")'
+```
+
+Then add the following configuration to your `app-config.yaml`, substituting the random string you just generated for the `salt` value.
+
+```yaml title=app-config.yaml
+backstageInsights:
+  salt: randomly-generated-string-here
+  debug: true
+```
+
+The `debug` property is set to `true`, which will output data to local logs instead of sending it to the production API. Don't forget to supply an override in your `app-config.production.yaml`:
+
+```yaml title=app-config.production.yaml
+backstageInsights:
+  debug: false
+```
+
+> Note: The backstageInsights.salt value is used to hash user identifiers in the insights event data that is sent to Spotify. This value is secret to Spotify (meaning: Spotify should never have access to this value), but it does not need to be treated as a secret within your organization (meaning: feel free to check this value in).
+
+### Check everything is working
+
+Start up backstage locally. For the sake of testing, you could provide any necessary overrides as environment variables inline, like this:
+
+```bash
+SPOTIFY_BACKSTAGE_API_TOKEN="{your token}" \
+  APP_CONFIG_backstageInsights_debug=false \
+  yarn dev
+```
+
+Once the app is built and running, open the app in your browser and open the browser's network console; check for requests being made against the insights backend with a path containing `backstage-insights/events`. As you navigate around Backstage, those requests should receive a `204` response if everything is configured correctly.
+
+Once you've verified your configuration locally, deploy your changes to production (ensuring that you properly set the `SPOTIFY_BACKSTAGE_API_TOKEN` variable in your production environment). Perform the same network request checks in your production Backstage.
+
+### Troubleshooting
+
+If you're not seeing what's described in the `Check everything is working section`, here are a few common misconfigurations to be aware of:
+
+- Are you seeing a `401` or `404` response instead of a `204`? There are two key items to check:
+  - Check that you've set the `SPOTIFY_BACKSTAGE_API_TOKEN` environment variable as expected.
+  - Be sure that you set the path correctly when you wired up the Insights backend. It should be `/backstage-insights`, as in `apiRouter.use('/backstage-insights', /* etc */)`.
+- Are you not seeing any matching network requests at all? Check that you've set the `backstageInsights.salt` value as expected. A missing value could result in the analytics API instantiation failing silently. It's also possible that `backstageInsights.debug` is mistakenly set to `true` (if this is the case, you'll see backstageInsights logs in your browser's console log). Make sure that your app is loading in all relevant configuration files (`app-config.yaml` as well as `app-config.production.yaml`).
+- Are you seeing an error similar to `tried to register duplicate or forbidden API factory` when you load the frontend? This is likely because you already have an analytics implementation supplied in your `apis.ts` file. To resolve, you can use the `MultipleAnalyticsApi` class to supply your existing analytics implementation alongside Backstage Insights. In place of `BackstageInsights.createDefaultApiFactory()`, you could do something similar to the following:
+
+```ts title=/packages/app/src/apis.ts
+import {
+  analyticsApiRef,
+  configApiRef,
+  createApiFactory,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  storageApiRef,
+} from '@backstage/core-plugin-api';
+// highlight-start
+import { MultipleAnalyticsApi } from '@backstage/core-app-api';
+import { BackstageInsightsApi } from '@spotify/backstage-plugin-analytics-module-insights';
+BackstageInsights.createDefaultApiFactory(),
+import { YourExistingAnalyticsApi } from '@somewhere/else';
+// highlight-end
+
+export const apis = [
+  ...
+  createApiFactory({
+    api: analyticsApiRef,
+    deps: {
+      configApi: configApiRef,
+      discoveryApi: discoveryApiRef,
+      fetchApi: fetchApiRef,
+      identityApi: identityApiRef,
+      storageApi: storageApiRef,
+    },
+    factory: ({
+      configApi,
+      discoveryApi,
+      fetchApi,
+      identityApi,
+      storageApi,
+    }) =>
+    // highlight-start
+      MultipleAnalyticsApi.fromApis([
+        BackstageInsightsApi.fromConfig(configApi, {
+          discoveryApi,
+          fetchApi,
+          identityApi,
+          storageApi,
+        }),
+        YourExistingAnalyticsApi.fromConfig(configApi, {
+          ...
+        }),
+      ]),
+    // highlight-end
+    ...
+  }),
+];
+```
+
+### New Insights backend plugin
+
+> If this is your first time installing Backstage Insights, you can safely ignore this section. However, if you are currently using a version of `@spotify/backstage-plugin-analytics-module-insights` that is `v0.6.1` or earlier, you will need to migrate using the following guide.
+
+Follow these instructions on how to [migrate to the new Insights backend plugin](/spotify-for-backstage-docs/insights/migrating-to-new-insights-backend)
+
+## Frontend Installation - Adding the UI
+
+### Get the Plugin
+
+Add the Insights frontend as a dependency to your Backstage frontend app:
+
+```bash
+yarn workspace app add @spotify/backstage-plugin-insights
+```
+
+### Install the Insights frontend
+
+Wire up routing to the `InsightsPage` entry page. The route should look something like this:
+
+```tsx title=packages/app/src/App.tsx
+// highlight-next-line
+import { InsightsPage } from '@spotify/backstage-plugin-insights';
+...
+
+/* Configure the route location for the Search plugin inside bindRoutes */
+
+bindRoutes({ bind }) {
+   ...
+   // highlight-start
+  bind(insightsPlugin.externalRoutes, {
+    searchPageRouteRef: searchPlugin.routes.root,
+  });
+   // highlight-end
+   ...
+}
+
+...
+
+const routes = (
+  <FlatRoutes>
+    <Navigate key="/" to="catalog" />
+     ...
+     { /* highlight-next-line */}
+     <Route path="/insights" element={<InsightsPage />} />
+     ...
+  </FlatRoutes>
+);
+```
+
+Add a sidebar menu item that routes to the path setup in the previous step:
+
+```tsx title=packages/app/src/components/Root/Root.tsx
+...
+// highlight-next-line
+import { InsightsSidebarItem } from '@spotify/backstage-plugin-insights'
+...
+
+<SidebarScrollWrapper>
+  <SidebarItem icon={MapIcon} to="tech-radar" text="Tech Radar" />
+    ...
+    {/* highlight-next-line */}
+    <InsightsSidebarItem />
+    ...
+</SidebarScrollWrapper>;
+
+...
+```
+
+### Configure Access Controls
+
+If you currently permission access to catalog resources, you'll likey want to configure who can access Insights as it could potentially expose information from the catalog that users might not normally have permissions to see.
+
+The recommended approaches to setting access controls for this plugin require the Backstage permissions framework. You may have set up this up already when configuring other plugins from the Spotify bundle, but if not, [follow this guide to setting up the permissions framework](https://backstage.io/docs/permissions/overview).
+
+#### Option 1: Use the RBAC Plugin (Recommended)
+
+_"The [RBAC plugin](https://backstage.spotify.com/plugins/rbac) is a no-code management UI for restricting access to plugins, routes, and data within Backstage. Admins can quickly define roles, assign users and groups, and configure permissions to encode authorization decisions according to your organization's evolving security and compliance needs."_
+
+To have access to Insights permissions within the RBAC UI, be sure to add `backstage-insights` to the list of `permissionedPlugins` in your `app-config.yaml`.
+
+```yaml title=app-config.yaml
+  permission:
+    enabled: true
+   permissionedPlugins:
+     - catalog
+     - scaffolder
+    // highlight-next-line
+     - backstage-insights
+   ...
+```
+
+Using the [RBAC plugin](/spotify-for-backstage-docs/rbac/), it's easy to define access controls for Insights with the single `insights.read` permission:
+
+![An Insights Admin role set up via the RBAC plugin](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/insights-rbac-setup.png)
+
+Here is a basic sample `any-allow` policy that allows general access to the catalog and templates but restricts access to the Insights plugin to the group `backstage-admins`:
+
+```yaml title=sample-policy.yaml
+name: Sample Insights Policy
+description: null
+options:
+  resolutionStrategy: any-allow
+roles:
+  - name: Default user
+    members: '*'
+    permissions:
+      - match:
+          resourceType: scaffolder-action
+        decision: allow
+      - match:
+          resourceType: scaffolder-template
+        decision: allow
+      - match:
+          resourceType: catalog-entity
+        decision: allow
+  - name: Admin
+    members:
+      - group:default/backstage-admins
+    permissions:
+      - match: '*'
+        decision: allow
+```
+
+> To get started with this sample policy, save the content as a `yaml` file and follow the [RBAC import policy instructions](/spotify-for-backstage-docs/rbac/setup-and-installation#import-and-export-a-policy).
+
+#### Option 2: Use Custom Policy Handlers
+
+If you don't use the RBAC plugin, you can define [custom policy handlers](https://backstage.io/docs/permissions/writing-a-policy) for permission framework policies.
+
+```ts title=packages/backend/src/plugins/permissions.ts
+class ExamplePolicy implements PermissionPolicy {
+  async handle(request: PolicyQuery): Promise<PolicyDecision> {
+    if (request.permission.name === 'insights.read') {
+      const isAllowed = await someEvaluationFunction();
+
+      if (isAllowed) {
+        return {
+          result: AuthorizeResult.ALLOW,
+        };
+      }
+    }
+
+    return { result: AuthorizeResult.DENY };
+  }
+}
+```
+
+### Integrate the Plugin with Your Frontend App
+
+Install the Insights routes in your app within `packages/app/src/App.tsx` and configure the route location for the Search plugin. You can also add a sidebar item for easy access to Insights if needed.
+
+### Verify Functionality
+
+After setting up access controls, users with the `insights.read` permission should see an Insights sidebar menu item. Ensure that the Backend plugin is correctly configured and data has been collected for at least 48 hours for the dashboards to display meaningful information.
+
+## Available Permissions
+
+The Insights plugin has a single permission, `insights.read`, which controls access to the Insights plugin. This permission is used to gate access to the Insights plugin and its associated data.

@@ -1,0 +1,317 @@
+openapi: 3.0.0
+info:
+  title: API Reference
+  version: 1.0.0
+paths:
+  /api/soundcheck/checks:
+    get:
+      summary: Get a List of Checks
+      description: Retrieve a list of checks.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                checks:
+                  - id: has_required_tags
+                    rule:
+                      any:
+                        - factRef: catalog:default/entity_descriptor
+                          path: $.metadata.tags
+                          operator: contains
+                          value: internal
+                        - factRef: catalog:default/entity_descriptor
+                          path: $.metadata.tags
+                          operator: contains
+                          value: external
+                    passedMessage: Tag found, check passed.
+                    failedMessage: No `internal` or `external` tag found, check failed.
+                  - id: has_readme
+                    rule:
+                      factRef: scm:default/readme
+                      path: $.exists
+                      operator: equal
+                      value: true
+                    passedMessage: README.md was found at repository root, check passed.
+                    failedMessage: README.md was not found at repository root, check failed.
+    post:
+      summary: Trigger a Set of Checks to Execute
+      description: Execute a set of checks.
+      requestBody:
+        description: Execute a set of checks request
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityRefs:
+                  type: array
+                  items:
+                    type: string
+                checkIds:
+                  type: array
+                  items:
+                    type: string
+                filter:
+                  type: object
+                check:
+                  type: object
+                dryRun:
+                  type: boolean
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                results:
+                  - entityRef: component:default/queue-proxy
+                    timestamp: '2023-02-15T19:33:15.945Z'
+                    checkId: has_required_tags
+                    state: failed
+                    details:
+                      notes:
+                        type: notes
+                        data: No `internal` or `external` tag found, check failed.
+                  - entityRef: component:default/searcher
+                    timestamp: '2023-02-15T19:33:15.945Z'
+                    checkId: has_required_tags
+                    state: failed
+                    details:
+                      notes:
+                        type: notes
+                        data: No `internal` or `external` tag found, check failed.
+  /api/soundcheck/checks/execute:
+    post:
+      summary: Trigger a Set of Checks to Execute
+      description: Execute a set of checks.
+      requestBody:
+        description: Execute a set of checks request
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityRefs:
+                  type: array
+                  items:
+                    type: string
+                checkIds:
+                  type: array
+                  items:
+                    type: string
+                filter:
+                  type: object
+                check:
+                  type: object
+                dryRun:
+                  type: boolean
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                results:
+                  - entityRef: component:default/queue-proxy
+                    timestamp: '2023-02-15T19:33:15.945Z'
+                    checkId: has_required_tags
+                    state: failed
+                    details:
+                      notes:
+                        type: notes
+                        data: No `internal` or `external` tag found, check failed.
+                  - entityRef: component:default/searcher
+                    timestamp: '2023-02-15T19:33:15.945Z'
+                    checkId: has_required_tags
+                    state: failed
+                    details:
+                      notes:
+                        type: notes
+                        data: No `internal` or `external` tag found, check failed.
+    parameters:
+      - name: dryRun
+        in: query
+        description: Execute checks without persisting results.
+        schema:
+          type: boolean
+    responses:
+      '200':
+        description: Successful response
+        content:
+          application/json:
+            example:
+              results:
+                - entityRef: component:default/queue-proxy
+                  timestamp: '2023-02-15T19:33:15.945Z'
+                  checkId: has_required_tags
+                  state: failed
+                  details:
+                    notes:
+                      type: notes
+                      data: No `internal` or `external` tag found, check failed.
+                - entityRef: component:default/searcher
+                  timestamp: '2023-02-15T19:33:15.945Z'
+                  checkId: has_required_tags
+                  state: failed
+                  details:
+                    notes:
+                      type: notes
+                      data: No `internal` or `external` tag found, check failed.
+      '500':
+        description: Internal Server Error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorSchema'
+  /api/soundcheck/checks/{checkId}:
+    get:
+      summary: Get a Check by ID
+      description: Retrieve a single check by ID.
+      parameters:
+        - name: checkId
+          in: path
+          description: The ID of the check to retrieve.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                check:
+                  id: has_readme
+                  rule:
+                    factRef: scm:default/readme
+                    path: $.exists
+                    operator: equal
+                    value: true
+                  passedMessage: README.md was found at repository root, check passed.
+                  failedMessage: README.md was not found at repository root, check failed.
+        '404':
+          description: Check not found
+  /api/soundcheck/results:
+    post:
+      summary: Submit Check Results
+      description: Submit check results to Soundcheck.
+      requestBody:
+        description: Submit check results request
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckResultsSchema'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResultsSchema'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorSchema'
+    get:
+      summary: Retrieve Check Results
+      description: Retrieve check results for a given entity.
+      parameters:
+        - name: entityRef
+          in: query
+          description: A reference to the entity to retrieve check results for.
+          required: true
+          schema:
+            type: string
+        - name: checks
+          in: query
+          description: Filters
+
+ check results to only those with the provided check ID(s).
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResultsSchema'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorSchema'
+components:
+  schemas:
+    CheckResultsSchema:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckResultSchema'
+    CheckResultSchema:
+      type: object
+      properties:
+        entityRef:
+          type: string
+        checkId:
+          type: string
+        state:
+          type: string
+        scope:
+          type: string
+        details:
+          type: object
+          properties:
+            notes:
+              type: object
+              properties:
+                type:
+                  type: string
+                version:
+                  type: integer
+                data:
+                  type: string
+    ErrorSchema:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            name:
+              type: string
+            message:
+              type: string
+            stack:
+              type: string
+        request:
+          type: object
+          properties:
+            method:
+              type: string
+            url:
+              type: string
+        response:
+          type: object
+          properties:
+            statusCode:
+              type: integer

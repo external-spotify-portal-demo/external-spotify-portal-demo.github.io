@@ -1,0 +1,71 @@
+---
+sidebar_position: 1
+title: 'Read-Only Catalog Permissions'
+---
+
+import ReactPlayer from 'react-player';
+
+## Introduction
+
+Backstage provides a powerful platform for managing catalogs, but in some scenarios, you may want to restrict users from creating or deleting entities directly from the catalog. This tutorial guides you through the process of setting up a read-only catalog using Role-Based Access Control (RBAC).
+
+### Prerequisites
+
+- Access to Backstage and RBAC with administrative privileges.
+
+## Demo
+
+<ReactPlayer
+  controls
+  url='https://info.backstage.spotify.com/hubfs/Pre-recorded%20Demos/read-only-rbac.mov'
+/>
+
+## Steps
+
+### 1. Duplicate Existing RBAC Policy
+
+To preserve your existing roles and permissions, start by duplicating your current RBAC policy.
+
+### 2. Add a "Read Only Users" Role
+
+Create a new role specifically for read-only users.
+
+- In the Roles section, click **Add Role**.
+- Name the new role "Read Only Users."
+
+### 3. Assign Members to "Read Only Users" Role
+
+Decide which groups should have read-only access to the catalog. Assign these groups to the "Read Only Users" role.
+
+- Select the desired groups or leave it empty for all members.
+
+### 4. Deny Catalog Delete Permission
+
+To make the catalog read-only, deny the permission to delete entities.
+
+- In the "Read Only Users" role, go to the **Permissions** section.
+- Add a new permission decision for "catalog.entity.delete."
+- Set the decision to **DENY**.
+
+### 5. Deny Catalog Create Permission
+
+Similarly, deny the permission to create entities.
+
+- In the "Read Only Users" role, add a new permission decision for "catalog.entity.create."
+- Set the decision to **DENY**.
+
+### 6. Prioritize "Read Only Users" Role
+
+Ensure that the "Read Only Users" role takes precedence over other roles.
+
+- Click **BACK TO POLICY** to view the list of roles.
+- Drag the "Read Only Users" role to the top, ensuring it has higher priority.
+
+### 7. Save and Publish
+
+Save and publish the updated RBAC policy to make it effective.
+
+- Click the ellipsis next to **Save**.
+- Select **Save and publish** from the dropdown menu.
+
+Congratulations! Your Backstage Catalog is now configured as read-only for the specified groups.

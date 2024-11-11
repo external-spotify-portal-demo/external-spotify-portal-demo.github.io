@@ -1,0 +1,436 @@
+---
+title: 'GitHub'
+sidebar_position: 2
+---
+
+Similar to the [Source Control Management (SCM)](/spotify-for-backstage-docs/soundcheck/core-concepts/fact-collectors/3p-integrations/scm) integration plugin, the GitHub integration plugin for [Soundcheck](https://backstage.spotify.com/plugins/soundcheck/) provides out-of-box integration with GitHub by leveraging Backstage's GitHub integration to implement extraction and collection of facts from GitHub repositories.
+
+The purpose of the GitHub integration plugin is to provide GitHub-specific fact collection (like branch protections), while the SCM integration plugin provides the collection of facts based on repository content.
+
+The GitHub integration plugin supports the extraction of the following facts:
+
+- [BranchProtections](#collecting-branchprotections-fact)
+- [RepositoryDetails](#collecting-repositorydetails-fact)
+
+## Prerequisites
+
+### Configure GitHub integration in Backstage
+
+Integrations are configured at the root level of `app-config.yaml`. Here's an example configuration for GitHub:
+
+```yaml
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}
+```
+
+Consult the [Backstage GitHub integration instructions](https://backstage.io/docs/integrations/github/locations) for full configuration details.
+
+### Add the GitHubFactCollector to Soundcheck
+
+GitHub integration for Soundcheck is not installed by default. It must be manually installed and configured for the **GitHub Fact Collector** to work.
+
+First, add the `@spotify/backstage-plugin-soundcheck-backend-module-github` package: 
+
+```bash
+yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend-module-github
+```
+
+Then, in `packages/backend/src/plugins/soundcheck.ts`, add the `GitHubFactCollector`:
+
+```diff
+  import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+  import { Router } from 'express';
+  import { PluginEnvironment } from '../types';
++ import { GithubFactCollector } from '@spotify/backstage-plugin-soundcheck-backend-module-github';
+
+  export default async function createPlugin(
+    env: PluginEnvironment,
+  ): Promise<Router> {
+    return SoundcheckBuilder.create({ ...env })
++     .addFactCollectors(
++       GithubFactCollector.create(env.config, env.logger, env.cache),
++     )
+      .build();
+  }
+```
+
+Consult the the [Soundcheck Backend documentation](https://spotify.github.io/spotify-for-backstage-docs/soundcheck/setup-and-installation#backend-setup)
+for additional details on setting up the Soundcheck backend.
+
+## Plugin Configuration
+
+The collection of facts is driven by configuration. To learn more about the configuration, jump to the [Defining GitHub Fact Collectors](#defining-github-fact-collectors) section.
+
+1. Create a `github-facts-collectors.yaml` file in the root of your Backstage repository and fill in all your **GitHub Fact Collectors**.
+   A simple example **GitHub Fact Collector** is listed below.
+
+   ```yaml
+   ---
+   frequency:
+     cron: '0 * * * *'
+   collects:
+     - factName: branch_protections
+       type: BranchProtections
+       branch: master
+     - factName: repo_details
+       type: RepositoryDetails
+   ```
+
+   **Note:** this file will be loaded at runtime along with the rest of your Backstage configuration files. Therefore, make sure that it's available in deployed environments in the same way as your `app-config.yaml` files are.
+
+2. Add a soundcheck collectors field to `app-config.yaml` and reference the newly created `github-facts-collectors.yaml`
+
+   ```yaml
+   # app-config.yaml
+   soundcheck:
+     collectors:
+       github:
+         $include: ./github-facts-collectors.yaml
+   ```
+
+## Defining GitHub Fact Collectors
+
+This section describes the data shape and semantics of **GitHub Fact Collectors**.
+
+### Overall Shape Of A GitHub Fact Collector
+
+The following is an example of a descriptor file for a **GitHub Fact Collector**:
+
+```yaml
+---
+frequency:
+  cron: '0 * * * *'
+filter:
+  kind: 'Component'
+cache:
+  duration:
+    hours: 2
+collects:
+  - factName: branch_protections
+    type: BranchProtections
+    branch: master
+    filter:
+      - spec.lifecycle: 'production'
+        spec.type: 'website'
+    cache: false
+  - factName: repo_details
+    type: RepositoryDetails
+    cache: true
+```
+
+Below are the details for each field.
+
+#### `frequency` [optional]
+
+The frequency at which the collector should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+This is the default frequency for each extractor.
+
+#### `filter` [optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+This is the default filter for each extractor.
+
+#### `cache` [optional]
+
+If the collected facts should be cached, and if so for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+This is the default cache config for each extractor.
+
+#### `collects` [required]
+
+An array describing which facts to collect and how to extract them. See below for details about the overall shape of a fact extractor.
+
+### Overall Shape Of A Fact Extractor
+
+Each extractor supports the fields described below.
+
+#### `factName` [required]
+
+The name of the fact to be extracted.
+
+- Minimum length of 1
+- Maximum length of 100
+- Alphanumeric with single separator instances of periods, dashes, underscores, or forward slashes
+
+#### `type` [required]
+
+The type of the extractor (e.g. BranchProtections, RepositoryDetails).
+
+#### `frequency` [optional]
+
+The frequency at which the fact extraction should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+If provided, it overrides the default frequency provided at the top level. If not provided, it defaults to the frequency provided at the top level. If neither extractor's frequency, nor default frequency is provided, the fact will only be collected on demand.
+
+Example:
+
+```yaml
+frequency:
+  minutes: 10
+```
+
+#### `branch` [optional]
+
+The branch to extract the fact from. If not provided, defaults to the repository's default branch.
+
+#### `filter` [optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+If provided, it overrides the default filter provided at the top level. If not provided, it defaults to the filter provided at the top level. If neither extractor's filter, nor default filter is provided, the fact will be collected for all entities.
+
+#### `cache` [optional]
+
+If the collected facts should be cached, and if so for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+If provided, it overrides the default cache config provided at the top level. If not provided, it defaults to the cache config provided at the top level. If neither extractor's cache nor default cache config is provided, the fact will not be cached.
+Example:
+
+```yaml
+cache:
+  duration:
+    hours: 24
+```
+
+## Collecting BranchProtections Fact
+
+The `BranchProtections` fact contains information about configured branch protections for a given branch in a GitHub repository.
+
+### Shape of A BranchProtections Fact Collector
+
+The shape of a BranchProtections Fact Collector matches the [Overall Shape Of A GitHub Fact Collector](#overall-shape-of-a-github-fact-collector) (restriction: `type: BranchProtections`).
+
+The following is an example of the `BranchProtections` Fact Collector configuration:
+
+```yaml
+collects:
+  - factName: branch_protections
+    type: BranchProtections
+    frequency:
+      cron: '0 * * * *'
+    branch: master
+    filter:
+      - spec.lifecycle: 'production'
+        spec.type: 'website'
+    cache: false
+```
+
+### Shape of A BranchProtections Fact
+
+The shape of a `BranchProtections` Fact is based on the [Fact Schema](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#fact-schema).
+
+For a description of the data collected regarding branch protection, refer to the [GitHub API documentation](https://docs.github.com/en/rest/branches/branch-protection).
+
+The following is an example of the collected `BranchProtections` fact:
+
+```yaml
+factRef: github:master/branch_protections
+entityRef: component:default/queue-proxy
+scope: master
+timestamp: 2023-02-24T15:50+00Z
+data:
+  url: 'https://api.github.com/repos/backstage/backstage/branches/master/protection'
+  required_pull_request_reviews:
+    url: 'https://api.github.com/repos/backstage/backstage/branches/master/protection/required_pull_request_reviews',
+    dismiss_stale_reviews: false
+    require_code_owner_reviews: true
+    required_approving_review_count: 2
+    require_last_push_approval: false
+  required_signatures:
+    url: 'https://api.github.com/repos/backstage/backstage/branches/master/protection/required_signatures'
+    enabled: false
+  enforce_admins:
+    url: 'https://api.github.com/repos/backstage/backstage/branches/master/protection/enforce_admins'
+    enabled: false
+  required_linear_history:
+    enabled: false
+  allow_force_pushes:
+    enabled: true
+  allow_deletions:
+    enabled: true
+  block_creations:
+    enabled: true
+  required_conversation_resolution:
+    enabled: false
+  lock_branch:
+    enabled: false
+  allow_fork_syncing:
+    enabled: true
+```
+
+### Shape of A BranchProtections Fact Check
+
+The shape of a `BranchProtections` Fact Check matches the [Shape of a Fact Check](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#shape-of-a-fact-check).
+
+The following is an example of the `BranchProtections` fact checks:
+
+```yaml
+soundcheck:
+  checks:
+    - id: requires_code_owner_reviews
+      rule:
+        factRef: github:master/branch_protections
+        path: $.required_pull_request_reviews.require_code_owner_reviews
+        operator: equal
+        value: true
+    - id: requires_at_least_two_approving_reviews
+      rule:
+        factRef: github:master/branch_protections
+        path: $.required_pull_request_reviews.required_approving_review_count
+        operator: greaterThanInclusive
+        value: 2
+```
+
+The following is an example of the Soundcheck program that utilizes these checks:
+
+```yaml
+- id: demo
+  name: Demo
+  ownerEntityRef: group:default/owning_group
+  description: Demonstration of Soundcheck BranchProtections Fact Extractor
+  levels:
+    - ordinal: 1
+      name: First level
+      description: Checks leveraging Soundcheck's GitHub BranchProtections Fact Extractor
+      checks:
+        - id: requires_code_owner_reviews
+          name: Requires code owner reviews
+          description: PR requires code owner reviews
+        - id: requires_at_least_two_approving_reviews
+          name: Requires at least two approving reviews
+          description: PR requires at least two approving reviews
+```
+
+## Collecting RepositoryDetails Fact
+
+The `RepositoryDetails` fact contains information about a GitHub repository.
+
+### Shape of A RepositoryDetails Fact Collector
+
+The shape of a `RepositoryDetails` Fact Collector matches the [Overall Shape Of A GitHub Fact Collector](#overall-shape-of-a-github-fact-collector) (restriction: `type: RepositoryDetails`).
+
+The following is an example of the `RepositoryDetails` Fact Collector configuration:
+
+```yaml
+collects:
+  - factName: repo_details
+    type: RepositoryDetails
+    frequency:
+      cron: '0 * * * *'
+    filter:
+      - spec.lifecycle: 'production'
+    cache: true
+```
+
+### Shape of A RepositoryDetails Fact
+
+The shape of a `RepositoryDetails` Fact is based on the [Fact Schema](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#fact-schema).
+
+For a description of the data collected about repository, refer to the [GitHub API documentation](https://docs.github.com/en/rest/repos/repos#get-a-repository).
+
+The following is an example of the collected `RepositoryDetails` fact:
+
+```yaml
+factRef: github:default/repo_details
+entityRef: component:default/queue-proxy
+scope: default
+timestamp: 2023-02-24T15:50+00Z
+data:
+  name: backstage
+  full_name: backstage/backstage
+  private: true
+  html_url: 'https://github.com/backstage/backstage'
+  description: null
+  fork: false
+  url: 'https://api.github.com/repos/backstage/backstage'
+  homepage: null
+  size: 3
+  stargazers_count: 0
+  watchers_count: 0
+  language: null
+  has_issues: true
+  has_projects: true
+  has_downloads: true
+  has_wiki: true
+  has_pages: false
+  has_discussions: false
+  forks_count: 0
+  mirror_url: null
+  archived: false
+  disabled: false
+  open_issues_count: 0
+  license: null
+  allow_forking: true
+  is_template: false
+  web_commit_signoff_required: false
+  visibility: 'private'
+  forks: 0
+  open_issues: 0
+  watchers: 0
+  default_branch: master
+  permissions:
+    admin: true
+    maintain: true
+    push: true
+    triage: true
+    pull: true
+  allow_squash_merge: true
+  allow_merge_commit: true
+  allow_rebase_merge: true
+  allow_auto_merge: false
+  delete_branch_on_merge: false
+  allow_update_branch: false
+  use_squash_pr_title_as_default: false
+  squash_merge_commit_message: 'COMMIT_MESSAGES'
+  squash_merge_commit_title: 'COMMIT_OR_PR_TITLE'
+  merge_commit_message: 'PR_TITLE'
+  merge_commit_title: 'MERGE_MESSAGE'
+  security_and_analysis:
+    secret_scanning:
+      status: 'disabled'
+    secret_scanning_push_protection:
+      status: 'disabled'
+  network_count: 0
+  subscribers_count: 1
+```
+
+### Shape of A RepositoryDetails Fact Check
+
+The shape of a `RepositoryDetails` Fact Check matches the [Shape of a Fact Check](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#shape-of-a-fact-check).
+
+The following is an example of the `RepositoryDetails` fact checks:
+
+```yaml
+soundcheck:
+  checks:
+    - id: allows_rebase_merge
+      rule:
+        factRef: github:default/repo_details
+        path: $.allow_rebase_merge
+        operator: equal
+        value: true
+    - id: has_less_than_ten_open_issues
+      rule:
+        factRef: github:default/repo_details
+        path: $.open_issues
+        operator: lessThan
+        value: 10
+```
+
+The following is an example of the Soundcheck program that utilizes these checks:
+
+```yaml
+- id: demo
+  name: Demo
+  ownerEntityRef: group:default/owning_group
+  description: Demonstration of Soundcheck RepositoryDetails Fact Extractor
+  levels:
+    - ordinal: 1
+      name: First level
+      description: Checks leveraging Soundcheck's GitHub RepositoryDetails Fact Extractor
+      checks:
+        - id: allows_rebase_merge
+          name: Allows Rebase Merge
+          description: Repository allows rebase merge
+        - id: has_less_than_ten_open_issues
+          name: Has Less Than 10 Open Issues
+          description: GitHub Repository Has Less Than 10 Open Issues
+```

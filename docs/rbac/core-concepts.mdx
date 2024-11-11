@@ -1,0 +1,98 @@
+---
+title: 'Core Concepts'
+sidebar_position: 3
+---
+
+## Publishing Lifecycle
+
+The RBAC UI facilitates the creation and management of RBAC policies. Policies go through a publishing lifecycle that includes the following stages:
+
+1. **Draft**: Newly created policies are in draft state and do not affect Backstage behavior. You can save draft policies while working on them and return to them later.
+2. **Published**: Draft policies can be published, replacing the existing policy and becoming active. Only one published policy exists at a time in Backstage.
+3. **Inactive**: When a new policy is published, the previously active policy becomes inactive.
+4. **Republish**: Inactive policies can be republished at any time to become active again.
+
+## Policy Overview
+
+The RBAC policy is configured by defining one or more **roles**, to which you can add users/groups as members. Each role can have multiple **permission decisions** configured, which match one or more **permissions**, and specify the authorization **decision** that should be made for those permissions.
+
+Users can be a member of multiple roles, and roles can overlap in the permissions they match. When a given permission matches multiple times, the **first match** will be the one used to determine the decision returned.
+
+## Matching permissions
+
+Permissions are a core concept in the Backstage permission framework. Each plugin can define a set of permissions that control what users can see and do within that plugin. Each [permission](https://github.com/backstage/backstage/blob/master/plugins/permission-common/src/types/permission.ts#L39) is an object with the following fields:
+
+- **name**: a string which uniquely identifies the permission, such as `catalog.entity.read`
+- **attributes**: an object containing attributes which describe the characteristics of the permission, to allow matching multiple permissions when making a policy decision. We expect the number of supported attributes to increase over time, but for now, the only attribute is `action`, which can be set to `"create"`, `"read"`, `"update"`, or `"delete"`.
+- **resourceType**: the type of resource expected to be supplied when authorizing this permission, if applicable (for example `catalog-entity`).
+
+In the RBAC UI, it's possible to match a single specific permission by name, or to match using a combination of resourceType and actions in order to match multiple permissions with a single entry in the list. It's also possible to match all permissions with a single entry - this is mostly useful for defining a fallback at the end of your policy, in case no other permission decision in the policy matched a request.
+
+## Specifying decisions
+
+The RBAC UI supports definitive `allow` or `deny` decisions, as well as [conditional decisions](https://backstage.io/docs/permissions/writing-a-policy#conditional-decisions) whose result can vary based on characteristics of the resource being authorized. Conditional decisions can only be returned for permissions with a resourceType - the RBAC UI handles enabling and disabling the "conditional" option as needed.
+
+Conditional decisions contain one or more **conditions**, which are exported by permissioned plugins and tied to a resourceType. The condition `HAS_ANNOTATION`, for example, is tied to the `catalog-entity` resourceType, and checks whether a catalog entity has a certain annotation. Multiple conditions can be combined using "any of" (return `allow` when any one of these conditions is true), or "all of" (only return `allow` when all of these conditions is true). It's also possible to negate conditions using "not", and combinations of conditions and logical operators can be deeply nested if needed.
+
+## Additonal features
+
+### Import / Export
+
+The RBAC plugin allows users to export existing policies, a feature which can be found within the policy page. You can import the resulting yaml file back into RBAC, which will result in a draft policy identical to the exported policy. This can be useful when working with multiple Backstage instances with similar configurations.
+
+### Default policy
+
+The RBAC plugin allows Backstage administrators to configure a default policy for deployment. Setting a default policy allows RBAC to enforce an active policy from the start, before any administrator has interacted with the RBAC UI. You can set a default policy by:
+
+1. Create a draft policy in the RBAC UI that represents the policy that you would like to become the default policy.
+1. Go to the draft policy page, and download the policy by clicking "Export." Alternatively, you can export any previous version or the active policy from the respective policy pages.
+1. Add a `defaultPolicy` field under the `rbac` field in your `app-config.yaml`, and point it to the file you saved from the previous step:
+
+```yaml
+permission:
+  rbac:
+    defaultPolicy:
+      $include: ./default-rbac-policy.yaml
+```
+
+1. You should now see that your Backstage instance behaves as configured in your default policy, even though you have not yet authored any other policies using the RBAC UI.
+
+**NOTE:** The default policy will be active if and only if no other active policies already exist.
+
+### Fallback policy
+
+By default, when a request to the RBAC backend fails, RBAC will automatically switch to denying all permissions. You can configure this behavior by specifying a fallback policy in your `app-config.yaml` in the exact same way as the default policy:
+
+```yaml
+permission:
+  rbac:
+    fallbackPolicy:
+      $include: ./fallback-rbac-policy.yaml
+```
+
+### Decision resolution strategy
+
+Multiple decisions from multiple roles could be applicable to a single user when authorizing a permission request. By default, the `any-allow` strategy will be selected for a new policy. Please select the decision resolution strategy that makes sense for your policy.
+
+> Please note the selected strategy will be applied to the whole policy and greatly affects the outcome of permission decisions.
+
+#### `any-allow` strategy
+
+The first allow decision from all of the roles and decisions is the final result. A single explicit allow or an allow as a result of a conditional decision would result in a final allow decision, otherwise the decision is deny.
+
+> With this option, the order of roles and decisions does not matter.
+
+#### `first-match` strategy
+
+The first matching decision from the first matching role that is applicable to the user is the final result, regardless if that decision is an allow, deny or conditional.
+
+> With this option, the order in which you define roles and decisions matters.
+
+#### How to change the desicion resolution strategy for a policy
+
+You can change the decision resolution strategy for a policy and read more about the options by following the steps below:
+
+1. Go to the draft policy page and click the `more options` icon on the top right.
+2. Select `Options`.
+3. Select which resolution strategy makes sense for your policy.
+4. Click `Back to Policy` when you are done. Your policy will be automatically updated with your selection, and it will be saved and/or published when save and publish your policy.

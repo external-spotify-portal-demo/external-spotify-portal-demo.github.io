@@ -1,0 +1,179 @@
+---
+title: 'Fact Collectors'
+sidebar_position: 1
+---
+
+## Fact Framework
+
+- Soundcheck allows organizations to push results through the [Soundcheck API](/spotify-for-backstage-docs/soundcheck/api).
+- Organizations may also leverage the Soundcheck Fact Framework, which provides a mechanism by which Soundcheck itself can collect facts about an entity in Backstage, and execute checks based on those facts.
+- The Fact Framework allows Soundcheck to collect facts (un-opinionated information) about an entity in the software catalog. Facts are made available to Soundcheck through fact collectors.
+
+Soundcheck comes with two built-in fact collectors: Software Catalog and Soundcheck. Soundcheck can also be extended with additional fact collectors.
+A fact collector can collect one or more facts on a given entity. At the moment, only Github fact collectors are supported for No Code UI,
+with support for others coming in future releases.
+
+![Soundcheck FC Main Screen](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-fc-main.png)
+
+## Configuring a fact collector via the no-code UI
+
+To configure a fact collector, make sure you are on the Collectors tab. Click on a Fact's “Configure” link to open a modal that displays the Fact Collector's configuration form.
+
+- WARNING: If you already have a config YAML file setup, you will be unable to use No-Code UI to configure your collector. In order to use the No-Code UI, simply remove the YAML file/reference and you will have access to configure from No-Code UI.
+
+![Soundcheck FC Modal](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-fc-modal.png)
+
+Once you choose to configure a collector, you will see the following page with 3 configuration options. You can see what each configuration collects in its description. All 3 configs have the following options:
+
+### Frequency
+
+![Soundcheck FC Frequency](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-fc-freq.png)
+
+You can set the frequency of how often to collect details from each collector option. The frequency of runs can be set using regular intervals or defined as custom cron expressions.
+
+### Filters
+
+![Soundcheck FC Filters](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-fc-filters.png)
+
+You can set filters for each option as well. These filters contain the same options as Tracks. You can learn by going to the [Creating a new track](#creating-a-new-track) section.
+
+### Caching
+
+![Soundcheck FC Cache](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-fc-cache.png)
+
+Lastly, you can enable Caching and set up an optional duration for said cache.
+
+Once you have finished making your desired changes, make sure to click on the save button in order to properly save you configuration. Optionally, you can click on the cancel button at anytime to discard your changes.
+
+## Configuring fact collectors via yaml configuration
+
+Soundcheck can be extended with additional _fact collectors_. A fact collector can collect one or more facts on a given entity.
+
+These fact collectors are provided by default with additional configuration required. A [check](#fact-checks) using facts from these collectors can be defined normally. However, if you'd like the check to execute periodically the check must have a schedule with filter because facts from these collectors are not collected on a schedule. Catalog and soundcheck collectors do not require a collector.yaml file to be present, just the checks.
+
+### Catalog Fact Collector
+
+The catalog fact collector exposes information from Backstage's Software Catalog
+as facts to Soundcheck. It provides a single fact on entities:
+`catalog:default/entity_descriptor` which provides the entity's
+[descriptor](https://backstage.io/docs/features/software-catalog/descriptor-format) as fact data.
+
+This enables the creation of [checks](#fact-checks) against an entity's metadata, to ensure that it is in compliance
+with your organizations standards and best practices.
+
+An example fact collected by the catalog fact collector:
+
+```yaml
+factRef: catalog:default/entity_descriptor
+entityRef: component:default/artist-web
+data:
+  apiVersion: backstage.io/v1alpha1
+  kind: Component
+  metadata:
+    name: artist-web
+    description: The place to be, for great artists
+    labels:
+      example.com/custom: custom_label_value
+    annotations:
+      example.com/service-discovery: artistweb
+      circleci.com/project-slug: github/example-org/artist-website
+    tags:
+      - java
+    links:
+      - url: https://admin.example-org.com
+        title: Admin Dashboard
+        icon: dashboard
+        type: admin-dashboard
+  spec:
+    type: website
+    lifecycle: production
+    owner: artist-relations-team
+    system: public-websites
+timestamp: 2023-02-20T13:50:35Z
+```
+
+An example catalog check:
+
+```yaml
+- id: has_required_tags
+  rule:
+    any:
+      - factRef: catalog:default/entity_descriptor
+        path: $.metadata.tags
+        operator: contains
+        value: java
+      - factRef: catalog:default/entity_descriptor
+        path: $.metadata.tags
+        operator: contains
+        value: data
+  schedule:
+    frequency:
+      cron: '* * * * *'
+    filter:
+      kind: 'Component'
+  passedMessage: |
+    Tag found, check passed.
+  failedMessage: |
+    No `java` or `data` tag found, check failed.
+```
+
+### Soundcheck Fact Collector
+
+The Soundcheck fact collector exposes Soundcheck track certifications
+as facts. It provides facts for each Soundcheck track using the fact reference:
+`soundcheck:default/program/:programId` where `:programId` is the identifier for the track
+whose certification is contained in the fact.
+
+This enables the creation of [checks](#fact-checks) against an entity's certification level in other
+tracks.
+
+### Overall shape of a fact collector configuration file
+
+However, if you'd like to use any of the available [third-party integration fact collectors](/spotify-for-backstage-docs/category/third-party-integrations) or create any custom collectors yourself, you will need to create a `<COLLECTOR_NAME>-fact-collector.yaml` file. Here is an example for the [GitHub TPI Fact Collector](/spotify-for-backstage-docs/soundcheck/core-concepts/fact-collectors/3p-integrations/github) plugin:
+
+```yaml title="github-fact-collector.yaml"
+---
+frequency:
+  cron: '* * * * *'
+filter:
+  kind: 'Component'
+cache:
+  duration:
+    hours: 24
+collects:
+  - factName: repo_details
+    type: RepositoryDetails
+  - factName: protections
+    type: BranchProtections
+```
+
+#### Fact collector fields
+
+| Field       | Required | Description                                                                                                                                                                                                                                                                            |
+| ----------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frequency` | Yes      | The frequency the collector will look for facts. Possible values are either a cron expression `{ cron: ... }` or [`HumanDuration`](https://backstage.io/docs/reference/backend-tasks.humanduration/). If cache is being used and the fact is unchanged, no checks will be retriggered. |
+| `cache`     | No       | Duration to store facts in cache before; if a check requests a fact that is located in cache, the fact collector will NOT re-request new data from the endpoint.                                                                                                                       |
+| `filter`    | No       | Filter for entities to run fact collection on.                                                                                                                                                                                                                                         |
+| `collects`  | No       | Array of facts to store from the endpoint for the use by checks.                                                                                                                                                                                                                       |
+
+### Adding yaml fact collectors to your fact library
+
+To add fact collectors to your fact library, you will need to add the following to your `app-config.yaml` file:
+
+```yaml title=app-config.yaml
+soundcheck:
+  collectors:
+    - $include: ./path-to-local-folder/github-fact-collector.yaml
+    - $include: ./path-to-local-folder/scm-fact-collector.yaml
+    - $include: ./path-to-local-folder/pagerduty-fact-collector.yaml
+```
+
+> Note: unlike checks and tracks, fact collectors cannot be managed via a remote repo. Your fact collector configuration must be present in the local Backstage instance.
+
+## REST API
+
+We include a REST API for Facts. See [API Reference](../../api.mdx#facts-api) for details.
+
+## Third Party Integrations
+
+We are always adding new third-party integrations to Soundcheck. You can find the list of available integrations [here](/spotify-for-backstage-docs/category/third-party-integrations).

@@ -1,0 +1,264 @@
+---
+title: 'PagerDuty'
+sidebar_position: 4
+---
+
+The PagerDuty integration plugin for [Soundcheck](https://backstage.spotify.com/plugins/soundcheck/) supports the extraction of the following facts:
+
+- [Service](#collecting-service-fact)
+- [Standards](#collecting-standards-fact)
+
+## Prerequisites
+
+### Configure PagerDuty integration in Backstage
+
+Integrations are configured at the root level of the `app-config.yaml` file. Here's an example configuration for PagerDuty:
+
+```yaml
+soundcheck:
+  collectors:
+    pagerduty:
+      token: ${PAGERDUTY_TOKEN}
+      server: api.pagerduty.com
+```
+
+### Add the PagerDutyFactCollector to Soundcheck
+
+First, add the `@spotify/backstage-plugin-soundcheck-backend-module-pagerduty` package:
+
+```sh
+yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend-module-pagerduty
+```
+
+Then, in `packages/backend/src/plugins/soundcheck.ts`, add the `PagerDutyFactCollector`:
+
+```diff
+  import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+  import { Router } from 'express';
+  import { PluginEnvironment } from '../types';
++ import { PagerDutyFactCollector } from '@spotify/backstage-plugin-soundcheck-backend-module-pagerduty';
+
+  export default async function createPlugin(
+    env: PluginEnvironment,
+  ): Promise<Router> {
+    return SoundcheckBuilder.create({ ...env })
+      .addFactCollectors(
++        PagerDutyFactCollector.create({
++          config: env.config,
++          cache: env.cache,
++          logger: env.logger,
++        }),
+    )
+    .build();
+}
+```
+
+Consult the the [Soundcheck Backend documentation](https://spotify.github.io/spotify-for-backstage-docs/soundcheck/setup-and-installation#backend-setup)
+for additional details on setting up the Soundcheck backend.
+
+## Plugin Configuration
+
+The collection of PagerDuty facts is driven by the configuration. To learn more about the configuration, consult the [Defining PagerDuty Fact Collectors](#defining-pagerduty-fact-collectors) section.
+
+1. Create a `pagerduty-facts-collectors.yaml` file in the root of your Backstage repository and fill in all your **PagerDuty Fact Collectors**.
+   A simple example PagerDuty fact collector is listed below.
+
+   ```yaml
+   ---
+   token: dummy
+   server: api.pagerduty.com
+   collects:
+     - type: Standards
+       filter:
+         - spec.lifecycle: 'production'
+           spec.type: 'website'
+       cache: false
+   ```
+
+   **Note:** this file will be loaded at runtime along with the rest of your Backstage configuration files, so make sure it's available in deployed environments in the same way as your `app-config.yaml` files.
+
+2. Add a Soundcheck collectors field to the `app-config.yaml` file and reference the newly created `pagerduty-facts-collectors.yaml` file.
+
+   ```yaml
+   # app-config.yaml
+   soundcheck:
+     collectors:
+       pagerduty:
+         $include: ./pagerduty-facts-collectors.yaml
+   ```
+
+## Defining PagerDuty Fact Collectors
+
+This section describes the data shape and semantics of **PagerDuty Fact Collectors**.
+
+### Overall Shape Of A PagerDuty Fact Collector
+
+The following is an example of a descriptor file for a **PagerDuty Fact Collector**:
+
+```yaml
+---
+frequency:
+  cron: '0 * * * *'
+filter:
+  kind: 'Component'
+cache:
+  duration:
+    hours: 2
+collects:
+  - type: Service
+    filter:
+      - spec.lifecycle: 'production'
+        spec.type: 'website'
+    cache: false
+```
+
+Below are the details for each field.
+
+#### `frequency` [optional]
+
+The frequency at which the collector should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+This is the default frequency for each extractor.
+
+#### `filter` [optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+This is the default filter for each extractor.
+
+#### `cache` [optional]
+
+If the collected facts should be cached, and if so, for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+This is the default cache config for each extractor.
+
+#### `collects` [required]
+
+An array describing which facts to collect and how to extract them. See below for details on the overall shape of a fact extractor.
+
+### Overall Shape Of A Fact Extractor
+
+Each extractor supports the fields described below.
+
+#### `type` [required]
+
+The type of the extractor (e.g. Service, Standards).
+
+#### `frequency` [optional]
+
+The frequency at which the fact extraction should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+If provided, it overrides the default frequency provided at the top level. If not provided, it defaults to the frequency provided at the top level. If neither extractor's frequency, nor default frequency is provided, the fact will only be collected on demand.
+Example:
+
+```yaml
+frequency:
+  minutes: 10
+```
+
+#### `filter` [optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+If provided, it overrides the default filter provided at the top level. If not provided, it defaults to the filter provided at the top level. If neither extractor's filter, nor default filter is provided, the fact will be collected for all entities.
+
+#### `cache` [optional]
+
+If the collected facts should be cached, and if so, for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+If provided, it overrides the default cache config provided at the top level. If not provided, it defaults to the cache config provided at the top level. If neither extractor's cache, nor default cache config is provided, the fact will not be cached.
+Example:
+
+```yaml
+cache:
+  duration:
+    hours: 24
+```
+
+## Entity configuration
+
+In your `catalog-info.yaml` file, add following metadata annotation to allow the plugin to map an entity to a service in PagerDuty.
+
+```yaml
+metadata:
+  annotations:
+    pagerduty.com/service-id: pd-test-service-id
+```
+
+Alternatively, you can also configure an integration key.
+
+```yaml
+metadata:
+  annotations:
+    pagerduty.com/integration-key: pd-test-integration-key
+```
+
+## Collecting Service Facts
+
+A **Service Fact** contains information about a _service_ from the [PagerDuty Service API](https://developer.pagerduty.com/api-reference/165ad96a22ffd-get-a-service).
+
+### Shape of A Service Fact Collector
+
+The shape of a **Service Fact Collector** matches the [Overall Shape Of A PagerDuty Fact Collector](#overall-shape-of-a-pagerduty-fact-collector) (restriction: `type: Service`).
+
+Here's an example of a **Service Fact Collector** configuration:
+
+```yaml
+- type: Service
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```
+
+### Shape of A Service Fact
+
+The shape of a **Service Fact** is based on the Soundcheck [Fact Schema](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#fact-schema).
+
+### Shape of A Service Fact Check
+
+The shape of a **Service Fact Check** matches the [Shape of a Fact Check](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#shape-of-a-fact-check).
+
+Here's an example of a **Service Fact Check** configuration:
+
+```yaml
+soundcheck:
+  checks:
+    - id: requires_type_to_be_service
+      rule:
+        factRef: pagerduty:default/service
+        path: $.type
+        operator: equal
+        value: service
+```
+
+## Collecting Standards Fact
+
+The **Standards Fact** contains information about _standards_ from [PagerDuty Standards API](https://developer.pagerduty.com/api-reference/f339354b607d5-list-a-resource-s-standards-scores).
+
+### Shape of A Standards Fact Collector
+
+The shape of a **Standards Fact Collector** matches the [Overall Shape Of A PagerDuty Fact Collector](#overall-shape-of-a-pagerduty-fact-collector) (restriction: `type: Standards`).
+
+Here's an example of a **Standards Fact Collector** configuration:
+
+```yaml
+- type: Standards
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```
+
+### Shape of A Standards Fact
+
+The shape of a **Standards Fact** is based on the Soundcheck [Fact Schema](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#fact-schema).
+
+### Shape of A Standards Fact Check
+
+The shape of a **Standards Fact Check** matches the [Shape of a Fact Check](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#shape-of-a-fact-check).
+
+Here's an example of a **Standards Fact Check**:
+
+```yaml
+soundcheck:
+  checks:
+    - id: requires_resource_type_to_be_technical_service
+      rule:
+        factRef: pagerduty:default/standards
+        path: $.resource_type
+        operator: equal
+        value: technical_service
+```

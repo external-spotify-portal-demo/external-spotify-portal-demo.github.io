@@ -1,0 +1,78 @@
+---
+title: Migrating to New Insights Backend
+sidebar_position: 4
+---
+
+# Migration & Installation
+
+> If this is your first time installing Backstage Insights, you can safely ignore this section. However, if you are currently using a version of `@spotify/backstage-plugin-analytics-module-insights` that is `v0.6.1` or earlier, you will need to migrate using the following guide.
+
+As of `v0.7.0`, the Backstage Insights analytics module sends events to Spotify's hosted service via a new backend plugin, rather than the proxy backend. This change was made in order to allow greater flexibility when collecting analytics events.
+
+Support for collection via the proxy backend is now deprecated and will be removed in the next release of Backstage Insights.
+
+# Migrating from the proxy backend
+
+1. Upgrade to the latest version of `@spotify/backstage-plugin-analytics-module-insights` in the same way you normally bump Backstage plugin packages
+
+2. [Install the Backstage Insights backend plugin](/spotify-for-backstage-docs/insights/setup-and-installation#backend-installation)
+
+3. Move your existing `app.analytics.backstageInsights` config to the top-level `backstageInsights` config key in your `app-config.yaml` file:
+
+**Prior configuration**
+
+```yaml title=app-config.yaml
+app:
+  analytics:
+    backstageInsights:
+      salt: xyz
+      debug: true # for local development
+```
+
+**New configuration**
+
+```yaml title=app-config.yaml
+backstageInsights:
+  salt: xyz
+  debug: true # for local development
+```
+
+> Ensure these changes are replicated in other config files, e.g. `app-config.production.yaml`.
+
+4. Be sure to configure the Spotify API token in the same way that you had it configured on the proxy (e.g. by using the same environment variable name) in your `app-config.yaml` file:
+
+**Prior configuration**
+
+```yaml title=app-config.yaml
+proxy:
+  '/spotify-backstage-api':
+    target: 'https://backstage-api.spotify.com'
+    headers:
+      Authorization: Bearer ${SPOTIFY_BACKSTAGE_API_TOKEN}
+```
+
+**New configuration**
+
+```yaml title=app-config.yaml
+spotify:
+  apiToken: ${SPOTIFY_BACKSTAGE_API_TOKEN}
+```
+
+> Ensure these changes are replicated in other config files, e.g. `app-config.production.yaml`.
+
+# Verifying the migration
+
+After running through the migration steps above, you can verify that everything is working as expected by following these [check everything is working](/spotify-for-backstage-docs/insights/setup-and-installation/#check-everything-is-working) instructions.
+
+If you encounter any issues while verifying the migration, check the [troubleshooting](/spotify-for-backstage-docs/insights/setup-and-installation/#troubleshooting) documentation.
+
+If you find that analytics event requests are being made, but they are being made to a path like `/api/proxy`, be sure that you’ve successfully upgraded the `@spotify/backstage-plugin-analytics-module-insights` package to the latest version.
+
+# Rolling back to the proxy backend
+
+If you are unable to upgrade successfully, please get in touch with us using our support form! In the meantime, you can set `backstageInsights.useProxy` to `true` in order to temporarily use the data collection mechanism from prior releases:
+
+```yaml title=app-config.yaml
+backstageInsights:
+  useProxy: true # Temporarily use Proxy Backend
+```

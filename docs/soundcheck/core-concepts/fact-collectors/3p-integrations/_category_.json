@@ -1,0 +1,11 @@
+{
+    "position": 1,
+    "label": "Third Party Integrations",
+    "collapsible": true,
+    "collapsed": true,
+    "className": "red",
+    "link": {
+      "type": "generated-index",
+      "title": "Third Party Integrations"
+    }
+  }

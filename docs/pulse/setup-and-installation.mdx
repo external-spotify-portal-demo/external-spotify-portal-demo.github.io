@@ -1,0 +1,177 @@
+---
+title: 'Setup & Installation'
+sidebar_position: 2
+---
+
+## Install the plugins
+
+```sh
+yarn workspace app add @spotify/backstage-plugin-pulse
+yarn workspace backend add @spotify/backstage-plugin-pulse-backend
+```
+
+## Integrate the plugin with your backstage app
+
+Create a new file, `packages/backend/src/plugins/pulse.ts` with the following content:
+
+```ts
+import { createRouter } from '@spotify/backstage-plugin-pulse-backend';
+import { Router } from 'express';
+import { PluginEnvironment } from '../types';
+
+export default async function createPlugin(
+  env: PluginEnvironment
+): Promise<Router> {
+  return await createRouter({
+    ...env,
+  });
+}
+```
+
+Set up the Pulse backend router in `/packages/backend/src/index.ts`. You will need to import the
+module from the previous step, create a new plugin environment for Pulse and add the router to the
+express app.
+
+```diff
+// packages/backend/src/index.ts
+
+  import proxy from './plugins/proxy';
+  import techdocs from './plugins/techdocs';
+  import search from './plugins/search';
+  import permission from './plugins/permission';
++ import pulse from './plugins/pulse';
+
+  /* ... */
+
+  const techdocsEnv = createEnv('techdocs');
+  const searchEnv = createEnv('search');
+  const appEnv = createEnv('app');
++ const pulseEnv = createEnv('pulse');
+
+  /* ... */
+
+  apiRouter.use('/techdocs', await techdocs(techdocsEnv));
+  apiRouter.use('/proxy', await proxy(proxyEnv));
+  apiRouter.use('/search', await search(searchEnv));
++ apiRouter.use('/pulse', await pulse(pulseEnv));
+```
+
+If you are using the New Backend System, you can use the [`legacyPlugin` helper function](https://backstage.io/docs/reference/backend-common.legacyplugin/) to integrate the plugin backend with your Backstage backend.
+
+```ts title=packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+// highlight-next-line
+import { legacyPlugin } from '@backstage/backend-common';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-app-backend/alpha'));
+// highlight-next-line
+backend.add(legacyPlugin('pulse', import('./plugins/pulse')));
+// ...
+
+backend.start();
+```
+
+Add the Pulse page as a frontend route and an icon to your sidebar:
+
+```tsx
+// packages/app/src/App.tsx
+
+import { PulsePage } from '@spotify/backstage-plugin-pulse';
+
+/* ... */
+
+<Route path='/pulse' element={<PulsePage />} />;
+```
+
+```tsx
+// packages/app/src/components/Root/Root.tsx
+
+import BallotIcon from '@material-ui/icons/Ballot';
+
+/* ... */
+
+<SidebarItem icon={BallotIcon} to='pulse' text='Pulse' />;
+```
+
+At this point, Pulse should be up and running. Navigating to the path you configured for Pulse
+(`/pulse` in the example) should present you with the Pulse UI. However, you will not be able to
+create surveys unless administrator access controls are set up.
+
+## Configure access controls
+
+You'll need to grant administrator privileges to at least one user to run surveys through Pulse.
+Currently, this is a simple binary "isAdmin" permission, but support for fine-grained
+permissions is planned for the future.
+
+The recommended approaches to setting access controls for this plugin require the Backstage
+permissions framework. You may have set up this up already when configuring other plugins from the
+Spotify bundle, but if not, [follow this guide to setting up the permissions framework][2].
+
+### Option 1: Using the RBAC plugin (Recommended)
+
+_"The [RBAC plugin][3] is a no-code management UI for restricting access to plugins, routes, and data within Backstage. Admins can quickly define roles, assign users and groups, and configure permissions to encode authorization decisions according to your organization’s evolving security and compliance needs."_
+
+Using the [RBAC plugin][3], it's easy to define access controls for Pulse with the single `survey.instance.administer` permission:
+
+![A Pulse Admin role set up via the RBAC plugin](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/pulse-rbac-setup.png)
+
+> Note: For the above to work make sure you have added `pulse` to the list of `permissionedPlugins` in your `app-config.yaml`. For more details, [click here][6].
+
+For more information on how to make use of the RBAC plugin, [click here][3].
+
+### Option 2: Using custom policy handlers
+
+It's also possible to define [custom handlers][4] for policy queries made by Pulse.
+
+```typescript
+// packages/backend/src/plugins/permissions.ts
+
+class ExamplePolicy implements PermissionPolicy {
+  async handle(request: PolicyQuery): Promise<PolicyDecision> {
+    if (request.permission.name === 'survey.instance.administer') {
+      const isAllowed = await someEvaluationFunction();
+
+      if (isAllowed) {
+        return {
+          result: AuthorizeResult.ALLOW,
+        };
+      }
+    }
+
+    return { result: AuthorizeResult.DENY };
+  }
+}
+```
+
+For more information, please refer to the [Permissions][2] documentation in Backstage.
+
+### Option 3: Using `app-config.yaml` (Not recommended)
+
+It's possible to bypass the permissions framework entirely and set up Pulse administrators via [static config][5], but this approach is **NOT recommended** as it isn't possible to define fine-grained access controls this way. **No future fine-grained access control via static config support is planned.**
+
+```yaml
+# app-config.yaml
+
+pulse:
+  surveyAdministrators:
+    - user:default/testUser
+```
+
+## Check everything is working
+
+Once access controls are set up correctly, users with administrator permissions should see an
+"Admin mode" badge at the top of the Pulse page. All other users should have access to Pulse
+but will not see the badge or be able to create surveys.
+
+[1]: https://backstage.spotify.com/plugins/pulse
+[2]: https://backstage.io/docs/permissions/overview
+[3]: https://backstage.spotify.com/plugins/rbac
+[4]: https://backstage.io/docs/permissions/writing-a-policy
+[5]: https://backstage.io/docs/conf/
+[6]: https://spotify.github.io/spotify-for-backstage-docs/rbac/setup-and-installation#configure-permissioned-plugins
+
+## Available Permissions
+
+The Pulse plugin has a single permission, `survey.instance.administer`, used to restrict access to the ability to create and publish a new survey.

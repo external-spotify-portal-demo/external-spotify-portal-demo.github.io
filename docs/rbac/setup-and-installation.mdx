@@ -1,0 +1,282 @@
+---
+title: 'Setup & Installation'
+sidebar_position: 2
+---
+
+# Installation & Setup
+
+## Prerequisites
+
+The RBAC plugin depends on a few other Backstage systems and features. It's possible that your Backstage instance already have some portion of these steps set up. If any of these are not yet set up, you'll need to set them up before installing RBAC.
+
+### Enable B2B Auth
+
+Backend-to-backend authentication lets backend code in Backstage securely verify that a given request originates from another part of the backend, rather than from a user. This is useful for tasks like indexing catalog entities for search. This type of request shouldn’t be permissioned, so this feature must be enabled before turning on permissions.
+
+To set up backend-to-backend authentication, follow the [setup instructions in the backstage.io docs](https://backstage.io/docs/auth/service-to-service-auth#setup).
+
+### Identity Resolver
+
+Like many other parts of Backstage, both the permission framework and the RBAC policy rely on group membership. This allows the RBAC configuration to have groups as members of a role, rather than exhaustively listing each person in the desired groups.
+
+Group membership is also useful for policy decisions — for example, allowing someone to act on an entity when they are a member of the group that owns it.
+
+When populating groups, include any groups that you plan to assign an RBAC role, and any groups that have a corresponding catalog entity.
+
+[The IdentityResolver docs on backstage.io](https://backstage.io/docs/auth/identity-resolver) describe the process for resolving group membership on sign in. If you can see a reference to a sensible entity and groups on your Backstage profile, you're ready to go.
+
+### Set up the permission framework
+
+Before you can use RBAC, you’ll need to [set up the permission framework](https://backstage.io/docs/permissions/getting-started) in Backstage. Since we'll be replacing the policy with the dynamic one supplied by RBAC, you don't need to complete the steps associated with policy authoring -- you can stop once you've [enabled and tested the permissions system](https://backstage.io/docs/permissions/getting-started#2-enable-and-test-the-permissions-system).
+
+## Backend Installation
+
+### Getting the plugin
+
+Add the RBAC packages as dependencies to your Backstage instance:
+
+```bash
+yarn workspace backend add @spotify/backstage-plugin-rbac-backend
+```
+
+### Configure RBAC administrator users
+
+The ability to view and adjust the RBAC policy configuration is granted to a fixed set of users and groups specified by the configuration property `permission.rbac.authorizedUsers`. Any other users visiting `/rbac` will see an error.
+
+Add the [entity references](https://backstage.io/docs/features/software-catalog/references) for the Backstage users and groups who should be permitted to configure RBAC to your app-config.yaml as follows:
+
+```yaml title=app-config.yaml
+permission:
+  enabled: true
+  rbac:
+    authorizedUsers:
+      - group:default/admins
+      - user:default/alice
+      - user:default/bob
+```
+
+### Configure permissioned plugins
+
+In order for the RBAC UI to aggregate information about the available permissions in Backstage, it's necessary to provide a list of plugins which include permissions in the RBAC configuration. At time of writing, the only first-party Backstage plugins which include permissions are `catalog` and `scaffolder`. If you're using third-party (e.g. Insights, Pulse, Soundcheck, etc.) or in-house plugins which include permissions, you should include those plugins as well.
+
+```yaml title=app-config.yaml
+permission:
+  enabled: true
+  // highlight-start
+  permissionedPlugins:
+    - catalog
+    - scaffolder
+  // highlight-end
+  rbac:
+    authorizedUsers:
+      - group:default/admins
+      - user:default/alice
+      - user:default/bob
+```
+
+### Install RBAC backend
+
+The RBAC backend handles storing policy configuration in the database and exposing it to the RBAC UI and to the RBAC policy running inside the permission framework.
+
+1. Add the following to a new file, `packages/backend/src/plugins/rbac.ts`:
+
+```typescript title=packages/backend/src/plugins/rbac.ts
+import { createRouter } from '@spotify/backstage-plugin-rbac-backend';
+import { Router } from 'express';
+import type { PluginEnvironment } from '../types';
+
+export default function createPlugin(env: PluginEnvironment): Promise<Router> {
+  return createRouter(env);
+}
+```
+
+2. Wire up the RBAC backend in `packages/backend/src/index.ts`. You’ll need to import the module from the previous step, create a plugin environment, and add the router to the express app:
+
+
+```ts title=packages/backend/src/index.ts
+import proxy from './plugins/proxy';
+import techdocs from './plugins/techdocs';
+import search from './plugins/search';
+import permission from './plugins/permission';
+// highlight-next-line
+import rbac from './plugins/rbac';
+
+...
+
+const techdocsEnv = createEnv('techdocs');
+const searchEnv = createEnv('search');
+const appEnv = createEnv('app');
+const permissionEnv = createEnv('permission');
+const rbacEnv = createEnv('rbac');
+// highlight-next-line
+const rbacEnv = createEnv('rbac');
+
+...
+
+apiRouter.use('/techdocs', await techdocs(techdocsEnv));
+apiRouter.use('/proxy', await proxy(proxyEnv));
+apiRouter.use('/search', await search(searchEnv));
+apiRouter.use('/permission', await permission(permissionEnv));
+// highlight-next-line
+apiRouter.use('/rbac', await rbac(rbacEnv));
+```
+
+### New Backend System
+
+If you are using the New Backend System, you can use the [`legacyPlugin` helper function](https://backstage.io/docs/reference/backend-common.legacyplugin/) to integrate the plugin backend with your Backstage backend.
+
+```ts title=packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+// highlight-next-line
+import { legacyPlugin } from '@backstage/backend-common';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-app-backend/alpha'));
+// highlight-next-line
+backend.add(legacyPlugin('rbac', import('./plugins/rbac')));
+// ...
+
+backend.start();
+```
+
+## Frontend Installation
+
+### Getting the plugin
+
+Add the RBAC packages as dependencies to your Backstage instance:
+
+```bash
+yarn workspace app add @spotify/backstage-plugin-rbac
+```
+
+### Install RBAC frontend
+
+First install the RBAC routes in the app within the `packages/app/src/App.tsx`. This will provide the UI for authoring your RBAC policy under the `/rbac` route. Note that this route can only be accessed by the `authorizedUsers` configured above.
+
+```tsx title=packages/app/src/App.tsx
+import { RBACRoot } from '@spotify/backstage-plugin-rbac';
+
+...
+
+const routes = (
+  <FlatRoutes>
+      ...
+    <Route path="/rbac" element={<RBACRoot />} />
+  </FlatRoutes>
+);
+```
+
+RBAC also provides a sidebar item that will only be visible to RBAC `authorizedUsers`. This is an optional step, but it provides an easy way for RBAC authorized users to access the plugin.
+
+```tsx title=packages/app/src/components/Root.tsx
+// highlight-next-line
+import { RBACSidebarItem } from '@spotify/backstage-plugin-rbac';
+
+export const Root = ({ children }: PropsWithChildren<{}>) => (
+  <SidebarPage>
+    <Sidebar>
+      <SidebarLogo />
+      ...
+      <SidebarScrollWrapper>
+        <SidebarItem icon={MapIcon} to='tech-radar' text='Tech Radar' />
+        <SidebarItem
+          icon={SkillExchangeIcon}
+          to='skill-exchange'
+          text='Skill Exchange'
+        />
+        <SidebarItem icon={PulseIcon} to='pulse' text='Pulse' />
+        <SidebarItem icon={SoundcheckIcon} to='soundcheck' text='Soundcheck' />
+        /* highlight-next-line */
+        <RBACSidebarItem />
+      </SidebarScrollWrapper>
+    </Sidebar>
+  </SidebarPage>
+);
+```
+
+### Add RBAC policy in the permission framework
+
+To use RBAC policies in the Backstage, we replace the `TestPermissionPolicy` that you might have created when initially setting up the permission framework with an `RBACPolicy` instance which uses the roles we will define in the UI in the following step [Configuring an initial policy](/spotify-for-backstage-docs/rbac/setup-and-installation#configure-an-initial-policy).
+
+Adjust `packages/backend/src/plugins/permission.ts` as follows:
+
+```diff title=packages/backend/src/plugins/permission.ts
+  import { createRouter } from '@backstage/plugin-permission-backend';
+- import {
+-   AuthorizeResult,
+-   PolicyDecision,
+- } from '@backstage/plugin-permission-common';
+- import { PermissionPolicy } from '@backstage/plugin-permission-node';
++ import { RBACPolicyBuilder } from '@spotify/backstage-plugin-rbac-backend';
+  import { Router } from 'express';
+  import { PluginEnvironment } from '../types';
+
+- class TestPermissionPolicy implements PermissionPolicy {
+-   async handle(): Promise<PolicyDecision> {
+-     return { result: AuthorizeResult.ALLOW };
+-   }
+- }
+-
+  export default async function createPlugin(
+    env: PluginEnvironment,
+  ): Promise<Router> {
+    return await createRouter({
+      config: env.config,
+      logger: env.logger,
+      discovery: env.discovery,
+-     policy: new TestPermissionPolicy(),
++     policy: await RBACPolicyBuilder.create(env).build(),
+      identity: env.identity,
+    });
+ }
+```
+
+### Configure an initial policy with the RBAC UI
+
+When there is no published RBAC policy, the default behaviour of RBAC is to deny all authorization requests sent to the permission framework. With this in mind, it's preferable to publish a simple RBAC policy before proceeding to install RBAC in the permission framework.
+
+> You can define a default policy in your `app-config.yaml` which will be used upon Backstage starting up if an RBAC policy has NOT yet been previously published. For instructions see the [Default policy](/spotify-for-backstage-docs/rbac/core-concepts#default-policy) documentation.
+
+The following instructions configure RBAC with a policy that allows all authorization requests. If you want to start with something more complex, refer to later sections of this documentation.
+
+1. Open the RBAC UI by visiting the `/rbac` path in your Backstage instance, or clicking the RBAC item in the sidebar (if you've installed the `RBACSidebarItem`).
+2. Click "New Version" to start working on a new draft policy, and choose a name for it.
+3. Click "New Role" to create a role within the policy, and give that a name too.
+4. Click the "New Permission Decision" button in the Permission Decisions table on the right hand side.
+5. In the dialog, select "Match All Permissions".
+6. Confirm that "Allow" is already selected at the bottom of the dialog.
+7. Click "Save".
+8. Confirm that the Members table on the left hand side contains a row for "All" users.
+9. Click "Back to Policy"
+10. Click "Save Draft"
+11. Click "Publish", and confirm publishing in the confirmation dialog.
+
+### Check everything is working
+
+If you've followed all the steps up to this point, the RBAC policy is now in place! You should find that Backstage adheres to the policy you configured in the above step. If you have any problems, please reach out to us via our [support page](https://backstage.spotify.com/account/support/) and we'll be happy to provide support.
+
+### Import and export a policy
+
+The RBAC UI allows users to import and export a policy in the form of a `yaml` file. Some users choose to create/ edit and test a policy in a `development` or `staging` environment, export that policy, and import it into their `production` environment to ensure consistency.
+
+To export a policy, select a policy (current, draft, or previous), click the ellipses in the top right and select "Export".
+
+To import a policy, select the "Import" button in the top right of the RBAC plugin.
+
+Once importet, the roles and permissions will be extracted and become editable in the UI. Once you are happy with the policy settings, you can "save and publish" to start enforcing the policy.
+
+Here is a basic sample `Any-allow` policy to to allow all permissions:
+
+```yaml title=sample-policy.yaml
+name: Sample Initial Policy
+description: null
+options:
+  resolutionStrategy: any-allow
+roles:
+  - name: Default User
+    members: '*'
+    permissions:
+      - match: '*'
+        decision: allow
+```

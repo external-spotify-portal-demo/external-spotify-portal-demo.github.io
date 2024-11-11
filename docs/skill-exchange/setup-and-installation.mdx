@@ -1,0 +1,331 @@
+---
+title: 'Setup & Installation'
+sidebar_position: 2
+---
+
+## Prerequisites
+
+### Backend-to-backend authentication
+
+Backend-to-backend authentication lets backend code in Backstage securely verify that a given request originates from another part of the backend, rather than from a user. This is useful for tasks like indexing catalog entities for search. This type of request shouldn’t be permissioned, so this feature must be enabled before turning on permissions.
+
+To set up backend-to-backend authentication, follow the [setup instructions in the backstage.io docs](https://backstage.io/docs/auth/service-to-service-auth#setup).
+
+### User entities
+
+Skill Exchange depends on user entities being present in the catalog, as users’ skill profiles are tied to these. Backstage has catalog modules to import users from [GitHub](https://backstage.io/docs/integrations/github/org), [LDAP](https://backstage.io/docs/integrations/ldap/org), or [Azure AD](https://backstage.io/docs/integrations/azure/org). You can also define users in entity YAML files manually, or create a custom **EntityProvider**.
+
+### Sign-in resolver
+
+In order for Skill Exchange to properly identify the user entity associated with the currently signed-in user, the **SignInResolver** must issue an identity token with a **sub** (subject) claim that is an entity ref to the user entity in the catalog corresponding to the signed-in user. Many authentication providers already provide this behavior, but if using a custom provider, you may need to add this behavior yourself. For examples, see the [Google auth sign-in resolver](https://github.com/backstage/backstage/blob/master/plugins/auth-backend/src/providers/google/provider.ts) or the [GitHub auth sign-in resolver](https://github.com/backstage/backstage/blob/master/plugins/auth-backend/src/providers/github/provider.ts). For information on configuring a sign-in resolver, see the [identity resolver docs on backstage.io](https://backstage.io/docs/auth/identity-resolver).
+
+### Slack app token
+
+Slack needs to be integrated to access notification and messaging functionality in Skill Exchange. A custom Slack app and the associated token (oauth token), app token and signing secret, must be created to set up Slack integration. Socked mode needs to be enabled for the app.
+
+You will also need to create a Slack app manifest file. The manifest we provide below lists the required scopes for Skill Exchange's notifications functionality. For more information, you can refer to Slack's [Create apps using manifests documentation](https://api.slack.com/reference/manifests#creating_apps).
+
+```yaml
+# This file is an example Slack app manifest used for installing a custom app in your workspace to deliver
+# Skill Exchange notifications. For more information, see https://api.slack.com/reference/manifests
+display_information:
+  name: Skill Exchange for Backstage
+  description: Enables notifications from Skill Exchange for Backstage in Slack.
+  background_color: '#9BF0E1'
+features:
+  bot_user:
+    display_name: Skill Exchange for Backstage
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      # scopes needed to read user information
+      - users:read
+      - users:read.email
+      # scope needed to open DMs to users
+      - im:write
+      # scopes needed to send messages
+      - chat:write
+      - chat:write.public
+settings:
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+```
+
+The slack configuration must be added to your `app-config.yaml` (or equivalent) file
+
+```yaml
+skillExchange:
+  # ...
+  slack:
+    token: xoxb-*************-*************-************************ #aka "oauth token", or "bot token"
+    appToken: xapp-*-***********-*************-****************************************************************
+    signingSecret: ********************************
+  # ...
+```
+
+## Backend Installation
+
+### Getting the plugin
+
+Add the Skill Exchange packages as dependencies to your Backstage instance:
+
+```bash
+yarn workspace backend add @spotify/backstage-plugin-skill-exchange-backend
+```
+
+### Integrate the plugin with your Backstage app
+
+Create a new file, `packages/backend/src/plugins/skillexchange.ts` with the following content:
+
+```ts title=packages/backend/src/plugins/skillexchange.ts
+import { Router } from 'express';
+import { PluginEnvironment } from '../types';
+import { createRouter } from '@spotify/backstage-plugin-skill-exchange-backend';
+
+export default async function createPlugin(
+  env: PluginEnvironment
+): Promise<Router> {
+  return await createRouter({
+    ...env,
+  });
+}
+```
+
+Wire up the Skill Exchange backend in `packages/backend/src/index.ts`. You’ll need to import the module from the previous step, create a plugin environment, and add the router to the express app:
+
+```ts title=packages/backend/src/index.ts
+import proxy from './plugins/proxy';
+import techdocs from './plugins/techdocs';
+import search from './plugins/search';
+import permission from './plugins/permission';
+// highlight-next-line
+import skillexchange from './plugins/skillexchange';
+
+/* ... */
+
+const techdocsEnv = createEnv('techdocs');
+const searchEnv = createEnv('search');
+const appEnv = createEnv('app');
+const permissionEnv = createEnv('permission');
+// highlight-next-line
+const skillexchangeEnv = createEnv('skillEx');
+
+/* ... */
+
+apiRouter.use('/techdocs', await techdocs(techdocsEnv));
+apiRouter.use('/proxy', await proxy(proxyEnv));
+apiRouter.use('/search', await search(searchEnv));
+apiRouter.use('/permission', await permission(permissionEnv));
+// highlight-next-line
+apiRouter.use('/skill-exchange', await skillexchange(skillexchangeEnv));
+```
+
+Add the `SkillProfileDecoratorFactory` to the search plugin in `packages/backend/src/search.ts`. This decorates user entities with the skills they add to their profiles and allows them to be found via search.
+
+```ts title=packages/backend/src/search.ts
+// highlight-next-line
+import { SkillProfileDecoratorFactory } from '@spotify/backstage-plugin-skill-exchange-backend';
+
+export default async function createPlugin({
+  cache,
+  logger,
+  permissions,
+  discovery,
+  config,
+}: PluginEnvironment) {
+  // Initialize a connection to a search engine.
+  const searchEngine = new LunrSearchEngine({ logger });
+
+  const indexBuilder = new IndexBuilder({ logger, searchEngine });
+
+  // highlight-start
+  indexBuilder.addDecorator({
+    factory: SkillProfileDecoratorFactory.fromConfig(env.config, {
+      cache: env.cache,
+      discovery: env.discovery,
+      logger: env.logger,
+      tokenManager: env.tokenManager,
+    }),
+  });
+  // highlight-end
+
+  return await createRouter({
+    engine: indexBuilder.getSearchEngine(),
+    types: indexBuilder.getDocumentTypes(),
+    permissions,
+    config,
+    logger,
+  });
+}
+```
+
+#### New Backend System
+
+If you are using the New Backend System, you can use the [`legacyPlugin` helper function](https://backstage.io/docs/reference/backend-common.legacyplugin/) to integrate the plugin backend with your Backstage backend.
+
+```diff title=packages/backend/src/index.ts
+  import { createBackend } from '@backstage/backend-defaults';
++ import { legacyPlugin } from '@backstage/backend-common';
+
+  const backend = createBackend();
+
+  backend.add(import('@backstage/plugin-app-backend/alpha'));
++ backend.add(legacyPlugin('skill-exchange', import('./plugins/skillExchange')));
+- backend.add(import('@backstage/plugin-search-backend/alpha'));
++ backend.add(legacyPlugin('search', import('./plugins/search')));
+  // ...
+
+  backend.start();
+```
+
+Note: you must install the search plugin via the `legacyPlugin` helper (rather than the `/alpha` export from the search backend) in order to be able to add the `SkillProfileDecoratorFactory` as described above.
+
+### [Optional] Defining default lists
+
+Skill Exchange has the ability to ingest lists of items that can be used across the application. For example, by adding a YAML list of locations, Gigs (Embeds, Mentorships, etc) can have their location to set to one of the locations defined in the YAML list. You can also define a default list of skills that users can select to add to their profiles (user-created skills are not available to other users to add to their profiles). This list is defined in a YAML file and passed to the Skill Exchange plugin via configuration.
+
+You can add Skills and Locations by creating a new yaml file using the following basic structure:
+
+```yaml title=default-lists.yaml
+skills:
+  - name: Web
+    category: DISCIPLINE
+  - name: JavaScript
+    category: LANGUAGES
+  - name: Next.js
+    category: FRAMEWORKS
+  - name: React
+    category: FRAMEWORKS
+  - name: Serverless
+    category: TECHNIQUES
+
+locations:
+  - Stockholm
+  - New York
+  - London
+```
+
+Then add the configuration option in your `app-config.yaml` (or equivalent) file.
+
+```yaml title=app-config.yaml
+skillExchange:
+  # highlight-start
+  defaultLists:
+    sources:
+      - /path/to/default-lists.yaml
+# highlight-end
+```
+
+> NOTE: You can have multiple YAML lists.
+>
+> You can have a different YAML file for skills and locations, and you can also have multiple files for the same type of data. For example, you can have a YAML file for locations in North America, and another YAML file for locations in Asia. The `sources` property on `defaultLists` takes an array of paths to your YAML files.
+
+Ingestion runs when you next restart Backstage. Items are only added and not removed, and duplicates are auto-detected. Therefore, you can leave the configuration settings and restart the Backstage instance multiple times without duplicating items. Modifying the YAML file will allow you to add new default items later.
+
+#### Skills and Locations
+
+Locations are a flat list of location names.
+
+Skills belong to one of the following categories: "DISCIPLINE", "LANGUAGES", "INFRASTRUCTURE", "FRAMEWORKS", "TECHNIQUES".
+
+You can also use an optional `systemUser` configuration to set the owner of the default skills. By default, this is set to 'system'. However, if you have a user that you want to be able to update and delete the default skills list, you can pass their userRef to allow them to do this. Setting a group as a `systemUser` is **not** supported at the moment.
+
+Currently only ingested skills are visible to all users. A System User can update and delete default skills, but if they add a new skill via the UI, it'll **not** be visible to other users.
+
+Also note that deleting a skill will remove it from any Embeds, Mentorships, and Hacks it's related to, and remove it from any user profiles.
+
+```yaml title=app-config.yaml
+skillExchange:
+  defaultLists:
+    sources:
+      - /path/to/default-skills.yaml
+    #highlight-next-line
+    systemUser: user:default/skill-admin
+```
+
+## Frontend Installation
+
+### Getting the plugin
+
+Add `@spotify/backstage-plugin-skill-exchange` as a dependency to `packages/app`
+
+```bash
+yarn workspace app add @spotify/backstage-plugin-skill-exchange
+```
+
+### Install the Skill Exchange frontend
+
+Wire up routing to the `SkillExchangePage` entry page. Use the `enableEmbeds` and `enableMentorships` props to enable the features you intend to use. The route should look something like this:
+
+```tsx title=packages/app/src/App.tsx
+// highlight-next-line
+import { SkillExchangePage } from '@spotify/backstage-plugin-skill-exchange';
+
+const routes = (
+  <FlatRoutes>
+    <Navigate key='/' to='catalog' />
+
+    {/* highlight-start */}
+    <Route
+      path='/skill-exchange'
+      element={<SkillExchangePage enableEmbeds enableHacks enableMentorships />}
+    />
+    {/* highlight-end */}
+  </FlatRoutes>
+);
+```
+
+Add a sidebar menu item that routes to the path setup in the previous step:
+
+```tsx title=packages/app/src/components/Root/Root.tsx
+// highlight-next-line
+import SchoolIcon from '@material-ui/icons/School';
+
+<SidebarScrollWrapper>
+  <SidebarItem icon={MapIcon} to='tech-radar' text='Tech Radar' />
+  {/* highlight-next-line */}
+  <SidebarItem icon={SchoolIcon} to='skill-exchange' text='Skill Exchange' />
+</SidebarScrollWrapper>;
+```
+
+### Add the User entity skills card
+
+Skill Exchange integration with the Backstage user pages is required in order to view and edit skill profiles. To enable, add the `SkillExchangeUserEntitySkillsCard` to the catalog user entity page:
+
+```tsx title=packages/app/src/components/catalog/EntityPage.tsx
+// highlight-next-line
+import { SkillExchangeUserEntitySkillsCard } from '@spotify/backstage-plugin-skill-exchange';
+
+const userPage = (
+  <EntityLayout>
+    <EntityLayout.Route path='/' title='Overview'>
+      <Grid container spacing={3}>
+        {entityWarningContent}
+        <Grid item xs={12} md={6}>
+          <EntityUserProfileCard variant='gridItem' />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <EntityOwnershipCard variant='gridItem' />
+        </Grid>
+        {/* highlight-start */}
+        <Grid item xs={12} md={6}>
+          <SkillExchangeUserEntitySkillsCard />
+        </Grid>
+        {/* highlight-end */}
+      </Grid>
+    </EntityLayout.Route>
+  </EntityLayout>
+);
+```
+
+#### Up and running!
+
+Skill Exchange is now up and running! Get started by clicking the link in your Backstage sidebar, or visiting `<backstage-instance>/skill-exchange`.
+
+## Available Permissions
+
+The Skill Exchange plugin does not implement any permissions to restrict access to the plugin.

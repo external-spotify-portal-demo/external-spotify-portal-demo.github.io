@@ -1,0 +1,104 @@
+---
+title: 'Campaigns'
+sidebar_position: 5
+---
+
+## Campaigns in Soundcheck
+
+Soundcheck Campaigns provide a structured approach for organizations to drive focused initiatives, such as software updates or system transitions. They offer a way to create, manage, and monitor these initiatives within the Soundcheck framework.
+
+### Key features include:
+
+- **Initiation of Campaigns**: Users can create campaigns with specific goals, ownership, and timelines.
+- **Focused Initiatives**: Campaigns enable targeting specific organizational objectives, like updating a software library.
+- **Notification System**: Alerts are optionally sent out via Slack when there are changes in check statuses or certification levels, aiding prompt action.
+- **Dashboard Tracking**: Progress of campaigns across different teams or the entire organization is visually trackable.
+- **Archiving Feature**: Completed campaigns can be archived for historical reference.
+
+Campaigns are designed to enhance awareness and actionability in focused initiatives, providing an additional capability within Soundcheck to manage initiatives that run for shorter periods. Some example use cases include:
+
+**Examples include:**
+
+- There is a need to Upgrade Spring Libraries to use a specific version of Spring Boot.
+- When your organization wants to remove unneeded data endpoints to save cost.
+
+### Campaigns Library
+
+The Campaigns Library in Soundcheck serves as the central dashboard for all campaign-related activities. It is designed to provide users with a comprehensive overview of campaigns as well as control over various campaigns within the organization. Here, users can engage in several key activities:
+
+- **Navigate to Individual Campaign Details**: Users can view detailed information about each campaign, including its objectives, current status, assigned teams or individuals, and progress metrics. This detailed view helps in monitoring and managing specific campaigns more effectively.
+- **Create New Campaigns**: This function allows users to initiate new campaigns. Users can define the campaign's objectives, set timelines, assign owners, and specify other relevant parameters. The creation process is designed to be intuitive, guiding users through each step to ensure all necessary information is captured.
+- **Edit Campaigns**: Campaign creators have the flexibility to modify the details of existing campaigns. This includes changing objectives, timelines, ownership, and other critical campaign parameters. This feature is crucial for adapting to changing conditions or requirements within a project or organization.
+- **Delete Campaigns**: In cases where a campaign is no longer relevant or has been created by mistake, users can remove it from the system. This helps in maintaining a clean and up-to-date campaign dashboard.
+- **Archive Completed Campaigns**: Once a campaign has reached its conclusion or its goals have been met, users can archive the campaign. This feature keeps the main dashboard focused on active campaigns, while still preserving the data of completed initiatives for future reference or analysis.
+
+![Soundcheck Campaigns Library](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/campaign-tab.png)
+
+### Campaign Creation
+
+Creating campaigns in Soundcheck is a feature accessible to all users,
+allowing them to initiate new campaigns. This process is divided into four structured steps.
+
+#### Step 1: Campaign Details
+
+In this initial step, users establish the foundational elements of the campaign:
+
+- **Campaign Name**: Assign a unique and descriptive name for easy identification.
+- **Campaign Description**: Provide a detailed description of the campaign’s objectives and scope.
+- **Campaign Owner**: Designate the individual or team responsible for overseeing the campaign.
+- **Support Channel**: Optionally specify the Slack channel for campaign-related notifications.
+- **Start and End Dates**: Set definitive start and end dates to establish a clear timeline for the campaign.
+
+#### Step 2: Selecting Checks
+
+This step involves choosing specific checks that the campaign will use to track progress against.
+
+#### Step 3: Applying Filters
+
+Filters are used to determine which entities the campaign targets.
+
+#### Step 4: Defining Milestones
+
+Milestones are set to track progress and achieve specific targets within the campaign.
+Each milestone includes a name, description, and a defined pass rate, providing clear targets for
+campaign progression.
+
+![Soundcheck Campaign Creation](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/campaign-creation.png)
+
+### Campaign Archival
+
+The Soundcheck Campaign Library which lists all active campaigns offers users tools for finalizing and
+archiving campaigns, ensuring the completion of objectives is clearly documented.
+Admins and authorized users can view archived campaigns, providing a historical perspective on past initiatives.
+
+### Campaign Progress and Milestones
+
+Milestones are an important part of campaigns, serving as tangible markers of progress and success.
+Each milestone’s progress is monitored, with updates provided on completion rates and remaining tasks.
+
+Campaign progress is monitored and displayed in various sections within Soundcheck:
+
+- **Overview Tab**: A dedicated section in the Overview tab provides a snapshot of all ongoing campaigns.
+- **Tech Health Page**: The Tech Health Page includes a tab for campaigns, showcasing detailed analytics and progress for each campaign. This helps in understanding the broader impact of campaigns on organizational tech health.
+- **Entity-Specific Progress**: For each entity page in Soundcheck, there's a section that displays the campaign progress related to that particular entity.
+- **Group-Specific Progress**: Similar to entity pages, each group page in Soundcheck includes a section that shows the campaign progress for the group.
+
+![Soundcheck Campaign Overview Page Progress](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/campaign-overview.png)
+![Soundcheck Campaign Progress](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/campaign-progress.png)
+
+### Campaign Notifications
+
+The optional notification feature for campaigns is designed to keep users informed and responsive to changes and developments within their software environment. They act as a proactive communication tool, enhancing awareness and efficiency in managing software health and compliance.
+
+For detailed documentation on getting notifications set up, refer to the [Slack Notifications section](../setup-and-installation.mdx#slack-notifications-optional) of the Soundcheck Backend README.
+
+#### Scenarios for Receiving Notifications
+
+During campaign creation, the creator has the option to set up a Slack channel to be used for campaign notifications. If specified, campaign notifications will be sent to the provided channel.
+
+- **Assigned Campaigns**: When a new campaign is created, the campaign specific channel will receive a notification to acknowledge and start addressing the goals of the campaign.
+- **Campaign Updates**: Alerts are issued for any changes to a campaigns, including the checks associated with the campaign, the milestones of the campaign, or any related metadata.
+- **Campaign Deleted**: Alerts when a Campaign itself has been Deleted.
+- **Campaign Archival**: When a Campaign is archived an alert will be sent.
+
+![Soundcheck Campaign Notification](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/campaign-notification.png)

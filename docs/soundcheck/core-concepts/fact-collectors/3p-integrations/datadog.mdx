@@ -1,0 +1,238 @@
+---
+title: 'DataDog'
+sidebar_position: 5
+---
+
+DataDog integration plugin for [Soundcheck](https://backstage.spotify.com/plugins/soundcheck/).
+
+DataDog integration plugin supports the extraction of the following facts:
+
+- [Service Definition](#collecting-service-definition-fact)
+- [Service Level Objective](#collecting-service-level-objective-fact)
+
+## Prerequisites
+
+### Configure DataDog integration in Backstage
+
+Integrations are configured at the root level of `app-config.yaml`, here's an example configuration for DataDog:
+
+```yaml
+soundcheck:
+  collectors:
+    datadog:
+      appKey: appKey
+      apiKey: apiKey
+
+      # If you wish to override the api URL
+      # baseUrl: https://us5.datadoghq.com
+```
+
+### Add the DataDogFactCollector to Soundcheck
+
+First add the package: `yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend-module-datadog`
+
+Then in `packages/backend/src/plugins/soundcheck.ts`, add the `DataDogFactCollector`:
+
+```diff
+import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+import { Router } from 'express';
+import { PluginEnvironment } from '../types';
++ import { DataDogFactCollector } from '@spotify/backstage-plugin-soundcheck-backend-module-datadog';
+
+export default async function createPlugin(
+  env: PluginEnvironment,
+): Promise<Router> {
+  return SoundcheckBuilder.create({ ...env })
+    .addFactCollectors(
++      DataDogFactCollector.create(env.logger)
+    )
+    .build();
+}
+```
+
+#### New Backend System
+
+If you are using the New Backend System, instead of the above, you can just add
+the following to your `packages/backend/src/index.ts` file:
+
+```diff
+const backend = createBackend();
+
+backend.add(import('@spotify/backstage-plugin-soundcheck-backend'));
++ backend.add(import('@spotify/backstage-plugin-soundcheck-backend-module-datadog'));
+// ...
+
+backend.start();
+```
+
+See the soundcheck-backend [documentation](https://www.npmjs.com/package/@spotify/backstage-plugin-soundcheck-backend#2-install-soundcheck-backend)
+for additional details on creating the Soundcheck backend.
+
+## Plugin Configuration
+
+Collection of facts is driven by config. To learn more about the config, see the [Defining DataDog Fact Collectors](#defining-datadog-fact-collectors).
+
+1. Create `datadog-facts-collectors.yaml` in the root of your Backstage repository and fill in all your DataDog fact collectors.
+A simple example DataDog fact collector is listed below.
+
+**Note:** this file will be loaded at runtime along with the rest of your Backstage configuration files, so make sure it's available in deployed environments in the same way as your `app-config.yaml` files.
+
+```yaml
+---
+appKey: dummy
+apiKey: dummy
+collects:
+  - type: service-definition
+    filter:
+      - spec.lifecycle: 'production'
+        spec.type: 'website'
+    cache: false
+   ```
+
+2. Add a soundcheck collectors field to `app-config.yaml` and reference the newly created `datadog-facts-collectors.yaml`
+
+```yaml
+# app-config.yaml
+soundcheck:
+  collectors:
+    datadog:
+      $include: ./datadog-facts-collectors.yaml
+   ```
+
+### Rate Limiting (Optional)
+
+This fact collector can be rate limited in Soundcheck using the following configuration:
+
+```yaml
+soundcheck:
+  job:
+    workers:
+      datadog:
+        limiter:
+          max: 1000
+          duration: 60000
+```
+
+In this example the fact collector is limited to 1000 executions per minute.
+
+This fact collector handles 429 rate limit errors from DataDog. Soundcheck will automatically wait and retry requests that are rate limited.
+
+## Defining DataDog Fact Collectors
+
+This section describes the data shape and semantics of DataDog Fact Collectors.
+
+### Overall Shape Of A DataDog Fact Collector
+
+The following is an example of a descriptor file for a DataDog Fact Collector:
+
+```yaml
+---
+baseUrl: https://datadog.com
+appKey: dummy
+apiKey: dummy
+collects:
+  - type: service-definition
+    filter:
+      - spec.lifecycle: 'production'
+        spec.type: 'website'
+    cache: false
+```
+
+See below for details about these fields.
+
+#### `baseUrl` [optional]
+
+The base URL of the DataDog instance to use. If not provided, the plugin will attempt to use the default URL `https://api.datadoghq.com`.
+
+#### `appKey` [optional]
+
+The DataDog appKey to use for authentication.
+
+#### `apiKey` [optional]
+
+The DataDog apiKey to use for authentication.
+
+#### `collects` [required]
+
+An array describing which facts to collect and how to extract them. See below for details about the overall shape of a fact extractor.
+
+### Overall Shape Of A Fact Extractor
+
+Each extractor supports the fields described below.
+
+#### `type` [required]
+
+The type of the extractor (e.g. service-definition, service-level-objective).
+
+#### `frequency` [optional]
+
+The frequency at which the fact extraction should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+If provided it overrides the default frequency provided at the top level. If not provided it defaults to the frequency provided at the top level. If neither extractor's frequency nor default frequency is provided the fact will only be collected on demand.
+Example:
+
+```yaml
+frequency:
+  minutes: 10
+```
+
+#### `filter` [optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+If provided it overrides the default filter provided at the top level. If not provided it defaults to the filter provided at the top level. If neither extractor's filter nor default filter is provided the fact will be collected for all entities.
+
+#### `cache` [optional]
+
+If the collected facts should be cached, and if so for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+If provided it overrides the default cache config provided at the top level. If not provided it defaults to the cache config provided at the top level. If neither extractor's cache nor default cache config is provided the fact will not be cached.
+Example:
+
+```yaml
+cache:
+  duration:
+    hours: 24
+```
+
+## Entity configuration
+
+In your `catalog-info.yaml` add the following metadata annotation to allow the plugin to map an entity to a service in DataDog.
+Make sure your SLO is tagged `service:service-id` in DataDog so that it can be mapped too.
+
+```yaml
+metadata:
+  annotations:
+    datadoghq.com/service-id: test-service-id
+```
+
+## Collecting Service Definition Fact
+
+A service definition fact contains information about service definition from [DataDog Service Definition API](https://docs.datadoghq.com/api/latest/service-definition/#get-a-single-service-definition).
+
+### Shape of A Service Definition Fact Collector
+
+The shape of a Service Definition Fact Collector matches the [Overall Shape Of A DataDog Fact Collector](#overall-shape-of-a-datadog-fact-collector) (restriction: `type: service-definition`).
+
+The following is an example of the Service Definition Fact Collector config:
+
+```yaml
+- type: service-definition
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```
+
+## Collecting Service Level Objective Fact
+
+An service-level-objective fact contains information about service-level-objective from [DataDog Service Level Objective API](https://docs.datadoghq.com/api/latest/service-level-objectives/#search-for-slos).
+
+### Shape of A Service Level Objective Fact Collector
+
+The shape of an Service Level Objective Fact Collector matches the [Overall Shape Of A DataDog Fact Collector](#overall-shape-of-a-datadog-fact-collector) (restriction: `type: service-level-objective`).
+
+The following is an example of the Service Level Objective Fact Collector config:
+
+```yaml
+- type: service-level-objective
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```

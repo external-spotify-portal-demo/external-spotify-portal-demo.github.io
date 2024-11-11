@@ -1,0 +1,221 @@
+# SonarQube
+
+The SonarQube integration plugin for [Soundcheck](https://backstage.spotify.com/plugins/soundcheck/) supports the extraction of the following facts:
+
+- [Projects](#collecting-projects-fact)
+- [Project Tags](#collecting-project-tags-fact)
+- [Issues](#collecting-issues-fact)
+
+## Prerequisites
+
+### Configure SonarQube integration in Backstage
+
+Integrations are configured at the root level of `app-config.yaml`. Here's an example configuration for SonarQube:
+
+```yaml
+soundcheck:
+  collectors:
+    sonarqube:
+      token: Token
+
+      # Alternatively you may use username and password
+      # username:
+      # password:
+
+      # If you wish to override the api URL
+      # baseUrl: https://sonarqube.com
+```
+
+### Add the SonarQubeFactCollector to Soundcheck
+
+First, add the package: `yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend-module-sonarqube`
+
+Then, in `packages/backend/src/plugins/soundcheck.ts`, add the `SonarQubeFactCollector`:
+
+```diff
+import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+import { Router } from 'express';
+import { PluginEnvironment } from '../types';
++ import { SonarQubeFactCollector } from '@spotify/backstage-plugin-soundcheck-backend-module-sonarqube';
+
+export default async function createPlugin(
+  env: PluginEnvironment,
+): Promise<Router> {
+  return SoundcheckBuilder.create({ ...env })
+    .addFactCollectors(
++      SonarQubeFactCollector.create(env.logger)
+    )
+    .build();
+}
+```
+
+Consult the the [Soundcheck Backend documentation](https://spotify.github.io/spotify-for-backstage-docs/soundcheck/setup-and-installation#backend-setup) for additional details on setting up the Soundcheck backend.
+
+## Plugin Configuration
+
+The collection of SonarQube facts is driven by configuration. To learn more about the configuration, consult the [Defining SonarQube Fact Collectors](#defining-sonarqube-fact-collectors) section.
+
+1. Create a `sonarqube-facts-collectors.yaml` file in the root of your Backstage repository and fill in all your **SonarQube Fact Collectors**.
+   A simple example SonarQube fact collector is listed below.
+
+   ```yaml
+   ---
+   token: dummy
+   collects:
+     - type: projects
+       filter:
+         - spec.lifecycle: 'production'
+           spec.type: 'website'
+       cache: false
+   ```
+
+   **Note:** this file will be loaded at runtime along with the rest of your Backstage configuration files, so make sure it's available in deployed environments in the same way as your `app-config.yaml` files.
+
+2. Add a Soundcheck collectors field to the `app-config.yaml` and reference the newly created `sonarqube-facts-collectors.yaml` file.
+
+   ```yaml
+   # app-config.yaml
+   soundcheck:
+     collectors:
+       sonarqube:
+         $include: ./sonarqube-facts-collectors.yaml
+   ```
+
+## Defining SonarQube Fact Collectors
+
+This section describes the data shape and semantics of **SonarQube Fact Collectors**.
+
+### Overall Shape Of A SonarQube Fact Collector
+
+The following is an example of a descriptor file for a **SonarQube Fact Collector**:
+
+```yaml
+---
+baseUrl: https://sonarqube.com
+token: dummy
+collects:
+  - type: project
+    filter:
+      - spec.lifecycle: 'production'
+        spec.type: 'website'
+    cache: false
+```
+
+Below are the details for each field.
+
+#### `baseUrl` [optional]
+
+The base URL of the SonarQube instance to use. If not provided, the plugin will attempt to use the default URL `https://sonarqube.com`.
+
+#### `token` [optional]
+
+The SonarQube token to use for authentication. If not provided, the plugin will attempt to use username and password instead.
+
+#### `username` [optional]
+
+The SonarQube username to use for authentication. If not provided, the plugin will attempt to use token instead.
+
+#### `password` [optional]
+
+The SonarQube password to use for authentication. If not provided, the plugin will attempt to use token instead.
+
+#### `collects` [required]
+
+An array describing which facts to collect and how to extract them. See below for details about the overall shape of a fact extractor.
+
+### Overall Shape Of A Fact Extractor
+
+Each extractor supports the fields described below.
+
+#### `type` [required]
+
+The type of the extractor (e.g. projects, project-tags, issues).
+
+#### `frequency` [optional]
+
+The frequency at which the fact extraction should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+If provided, it overrides the default frequency provided at the top level. If not provided, it defaults to the frequency provided at the top level. If neither extractor's frequency nor default frequency is provided, the fact will only be collected on demand.
+Example:
+
+```yaml
+frequency:
+  minutes: 10
+```
+
+#### `filter` [optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+If provided, it overrides the default filter provided at the top level. If not provided, it defaults to the filter provided at the top level. If neither extractor's filter nor default filter is provided, the fact will be collected for all entities.
+
+#### `cache` [optional]
+
+If the collected facts should be cached, and if so for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+If provided it, overrides the default cache config provided at the top level. If not provided, it defaults to the cache config provided at the top level. If neither extractor's cache nor default cache config is provided, the fact will not be cached.
+Example:
+
+```yaml
+cache:
+  duration:
+    hours: 24
+```
+
+## Entity configuration
+
+In your `catalog-info.yaml` file, add the following metadata annotation to allow the plugin to map an entity to a project in SonarQube.
+
+```yaml
+metadata:
+  annotations:
+    sonarqube.org/project-key: test-project-key
+```
+
+## Collecting Projects Fact
+
+A **Projects Fact** contains information about projects from [SonarQube Projects API](https://next.sonarqube.com/sonarqube/web_api/api/projects/search).
+
+### Shape of A Projects Fact Collector
+
+The shape of a **Projects Fact Collector** matches the [Overall Shape Of A SonarQube Fact Collector](#overall-shape-of-a-sonarqube-fact-collector) (restriction: `type: projects`).
+
+Here's an example of a **Projects Fact Collector** configuration:
+
+```yaml
+- type: projects
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```
+
+## Collecting Project Tags Fact
+
+A **Project Tags Fact** contains information about project tags from [SonarQube Project Tags API](https://next.sonarqube.com/sonarqube/web_api/api/project_tags/search).
+
+### Shape of A Project Tags Fact Collector
+
+The shape of a **Project Tags Fact Collector** matches the [Overall Shape Of A SonarQube Fact Collector](#overall-shape-of-a-sonarqube-fact-collector) (restriction: `type: project-tags`).
+
+Here's an example of a **Project Tags Fact Collector** configuration:
+
+```yaml
+- type: project-tags
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```
+
+## Collecting Issues Fact
+
+An **Issues Fact** contains information about issues from [SonarQube Issues API](https://next.sonarqube.com/sonarqube/web_api/api/issues/search).
+
+### Shape of A Issues Fact Collector
+
+The shape of an **Issues Fact Collector** matches the [Overall Shape Of A SonarQube Fact Collector](#overall-shape-of-a-sonarqube-fact-collector) (restriction: `type: issues`).
+
+Here's an example of an **Issues Fact Collector** configuration:
+
+```yaml
+- type: issues
+  cache: true
+  frequency:
+    cron: '0 * * * *'
+```

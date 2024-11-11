@@ -1,0 +1,66 @@
+---
+title: 'Tech Insights'
+sidebar_position: 3
+---
+
+The Tech Insights integration plugin for [Soundcheck](https://backstage.spotify.com/plugins/soundcheck/) exposes facts from [Tech Insights](/spotify-for-backstage-docs/insights/) to Soundcheck, allowing them to be used in Soundcheck checks.
+
+## Prerequisites
+
+### Add the TechInsightsHubFactCollector to Soundcheck
+
+First, add the `@spotify/backstage-plugin-soundcheck-backend-module-techinsights` package: 
+
+```bash
+yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend-module-techinsights
+```
+
+Then, in `packages/backend/src/plugins/soundcheck.ts`, add the `TechInsightsFactCollector`:
+
+```diff
+  import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+  import { Router } from 'express';
+  import { PluginEnvironment } from '../types';
++ import { TechInsightsFactCollector } from '@spotify/backstage-plugin-soundcheck-backend-module-techinsights';
+
+  export default async function createPlugin(
+    env: PluginEnvironment,
+  ): Promise<Router> {
+    return SoundcheckBuilder.create({ ...env })
++     .addFactCollectors(
++       TechInsightsFactCollector.create({
++         discovery: env.discovery,
++         tokenManager: env.tokenManager,
++         logger: env.logger,
++       }),
++     )
+      .build();
+  }
+```
+
+Consult the the [Soundcheck Backend documentation](https://spotify.github.io/spotify-for-backstage-docs/soundcheck/setup-and-installation#backend-setup)
+for additional details on setting up the Soundcheck backend.
+
+## Using TechInsight facts in Soundcheck
+
+Soundcheck fact references for this plugin follow the format `techinsights:default/<id>` where `<id>`
+is the fact retriever identifier from Tech Insights. 
+
+For example, if there is a Tech Insights fact retriever with an ID of `entityOwnershipFactRetriever`, its Soundcheck fact reference would be
+`techinsights:default/entityOwnershipFactRetriever`.
+
+Soundcheck fact references enable facts from Tech Insights to be used in Soundcheck check. Here is an example of a Soundcheck check that makes use of a fact from Tech Insights.
+
+```yaml
+id: has-owner
+rule:
+  factRef: techinsights:default/entityOwnershipFactRetriever
+  path: $.hasOwner
+  operator: equal
+  value: true
+```
+
+When this check is executed, it will pull the fact(s) with a fact retriever identifier of `entityOwnershipFactRetriever` from Tech Insights and perform the specified check logic on it.
+
+Currently, the collection of facts from Tech Insights is not scheduled or cached. Tech Insights facts are only
+collected on demand, when a check using a Tech Insights fact is executed (which can be scheduled).

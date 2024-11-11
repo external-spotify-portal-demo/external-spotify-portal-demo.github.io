@@ -1,0 +1,352 @@
+---
+title: 'Checks'
+sidebar_position: 3
+---
+
+A check is a comparison between a defined acceptable outcome and the actual outcome of a given process.
+Checks indicate where the software aligns to or deviates from organizational standards and best practices.
+
+![Soundcheck Checks](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-checks.png)
+
+Checks consist of four components: facts, paths, operators, and values.
+These components are then organized via a Boolean calculator in the UI.
+You can see an example of the rule layout a user will see when creating a check in the image below.
+
+![Soundcheck Boolean Calculator](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-boolean-calculator.png)
+
+## Managing checks via the no-code UI
+
+### Creating a check
+
+To create a check, select the facts that you want to use, organize them into rules and give your check a meaningful name and a description.
+The rules are what defines a check and what a track will use in determining if an entity passes or fails.
+Simple expressions can be combined using Any Of / All Of to create more complex rules.
+You also have the option of adding Pass/Fail messages for additional details of why something passed/failed.
+
+![Soundcheck Create Check](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-new-check.png)
+
+### Editing a check
+
+Once a check is created, you will be able to manage and edit your check on its detail page.
+You’ll find no differences in how the pages look when creating/editing a check.
+From the checks listing page, you will see an option to edit you check, which will bring you to the details page shown below.
+
+![Soundcheck Edit Check](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-edit-check.png)
+
+You can make as many changes as desired, but just keep in mind that changes are reflected in tracks that may already have said check assigned.
+Checks can also be a part of multiple tracks, which could have the unintentional effect of causing some tracks to start failing.
+While the track you want the check updated in may pass, a track setup somewhere else may fail.
+
+## Managing checks via yaml configuration
+
+Checks can be created in code via yaml configuration files.
+
+### Overall shape of a Check
+
+A fact check defines a [rule](#rules), comprised of one or more conditions: a combination of facts, [operators](#operators), and values that determine whether the check emits a `passed` or `failed` check result to Soundcheck. Required fields include `id` and `rule`.
+
+> Note: the `id` field is a unique identifier for the check. It is used to reference the check in tracks and within the Soundcheck UI. It must be unique across all checks in your library.
+
+Here is an example of a basic check (more [examples](#examples)):
+
+```yaml
+id: has_pagerduty_integration_key
+rule:
+  factRef: catalog:default/entity_descriptor
+  path: $.metadata.annotations[pagerduty.com/integration-key]
+  operator: matches
+  value: .+
+  failedMessage: |
+    No PagerDuty Integration Key defined for this entity.
+  passedMessage: |
+    PagerDuty Integration Key defined for this entity.
+```
+
+### Adding yaml checks to your check library
+
+To add checks defined in a yaml file to your check library, you need to source them in you `app-config.yaml`. You have the option of storing them locally or remotely.
+
+Here is an example configuration should your check yaml files be local to your Backstage project:
+
+```yaml title=app-config.yaml
+soundcheck:
+  checks:
+    - $include: ./path-to-local-folder/checks-file-1.yaml
+    - $include: ./path-to-local-folder/checks-file-2.yaml
+    - $include: ./path-to-local-folder/checks-file-3.yaml
+```
+
+To maintain your checks files in a remote repo, you can source them in `app-config.yaml` in a similar manner. Here is an example configuration:
+
+```yaml title=app-config.yaml
+soundcheck:
+  checks:
+    - https://github.com/user/repo/blob/main/checks-file-1.yaml
+    - https://github.com/user/repo/blob/main/checks-file-2.yaml
+    - https://github.com/user/repo/blob/main/checks-file-3.yaml
+  remote_file_updates:
+    disabled: false
+    frequency:
+      minutes: 5
+```
+
+> Note: you cannot combine local and remote sourcing for checks files. This includes the usage of `$include` within a remotely sourced checks file. The below option will NOT work:
+
+```yaml title=app-config.yaml
+soundcheck:
+  checks:
+    - https://github.com/user/repo/blob/main/checks-file-1.yaml
+    - https://github.com/user/repo/blob/main/checks-file-2.yaml
+    - $include: ./path-to-local-folder/checks-file-3.yaml
+```
+
+#### Remote file update options
+
+The `remote_file_updates` object is optional configuration allowing you to control if and when Soundcheck looks for updates within your remote files. This configuration is global for Soundcheck, so will apply to both track and check files. If not explicitly set, see the below for default values.
+
+| Key         | Default    | Description                                                                                                                                                                                                             |
+| ----------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `disabled`  | false      | Enables Soundcheck to look for updates in remote files                                                                                                                                                                  |
+| `frequency` | minutes: 5 | The frequency at Soundcheck will look for updates in remote files. Possible values are either a cron expression `{ cron: ... }` or [`HumanDuration`](https://backstage.io/docs/reference/backend-tasks.humanduration/). |
+
+## Check Fields
+
+| Field            | Required | Description                                                   |
+| ---------------- | -------- | ------------------------------------------------------------- |
+| `id`             | Yes      | The unique identifier for this fact check.                    |
+| `name`           | No       | A name for the fact check suitable for display on a UI.       |
+| `description`    | No       | A description of the fact check suitable for display on a UI. |
+| `rule`           | Yes      | One or more conditions that determine check result.           |
+| `passedMessage`  | No       | Message if the check passes.                                  |
+| `failedMessage`  | No       | Message if the check fails.                                   |
+| `schedule`       | No       | How often and on what entities the fact check should run.     |
+| `ownerEntityRef` | No       | Reference to the owner of the check.                          |
+
+Below is an example fact check which checks if a PagerDuty integration key is present in an entity's metadata:
+
+### Rules
+
+A rule contains one or more conditions.
+
+The simplest form of a condition consists of a fact reference, an [operator](#operators),
+and a _value_. When the check is executed, the operator is
+used to compare the fact against the value.
+
+Example of a simple condition:
+
+```yaml
+rule:
+  factRef: catalog:default/entity_descriptor
+  path: $.metadata.annotations[pagerduty.com/integration-key]
+  operator: matches
+  value: .+
+  failedMessage: |
+    No PagerDuty Integration Key defined for this entity.
+```
+
+More complex conditions can by created through the use of boolean expressions. A rule may
+optionally have either an `all` or an `any` expression at its root, containing an array of
+conditions. The `all` operator specifies that _all_ conditions
+contained within must be truthy for the check to pass. The `any` operator only requires one
+condition to be truthy for the check to pass.
+
+Example of a complex condition:
+
+```yaml
+rule:
+  any:
+    - factRef: catalog:default/entity_descriptor
+      path: $.metadata.labels['language']
+      operator: equal
+      value: java
+    - factRef: catalog:default/entity_descriptor
+      path: $.metadata.labels['language']
+      operator: equal
+      value: kotlin
+```
+
+### Operators
+
+| Operator               | Description                                                  |
+| ---------------------- | ------------------------------------------------------------ |
+| `equal`                | Fact must equal value.                                       |
+| `notEqual`             | Fact must not equal value.                                   |
+| `matches`              | Fact string matches given value regex.                       |
+| `semverGt`             | Fact version must be greater than value version.             |
+| `semverGte`            | Fact version must be greater than or equal to value version. |
+| `semverLt`             | Fact version must be less than value version.                |
+| `semverLte`            | Fact version must be less than or equal to value version.    |
+| `semverEq`             | Fact version must equal value version.                       |
+| `semverNeq`            | Fact version must not equal value version.                   |
+| `semverSatisfies`      | Fact version satisfies value range.                          |
+| `semverGtr`            | Fact version is greater than all versions in value range.    |
+| `semverLtr`            | Fact version is less than all versions in value range.       |
+| `lessThan`             | Fact must be less than value.                                |
+| `lessThanInclusive`    | Fact must be less than or equal to value.                    |
+| `greaterThan`          | Fact must be greater than value.                             |
+| `greaterThanInclusive` | Fact must be greater than or equal to value.                 |
+| `in`                   | Fact must be included in array value.                        |
+| `notIn`                | Fact must not be included in array value.                    |
+| `contains`             | Fact array must include value.                               |
+| `doesNotContain`       | Fact array must not include value.                           |
+
+### Schedule
+
+Scheduling options for fact checks:
+
+| Field        | Required | Description                                                     |
+| ------------ | -------- | --------------------------------------------------------------- |
+| `frequency`  | Yes      | Cron expression or HumanDuration for check execution frequency. |
+| `entityRefs` | No       | Entities to run check on (overrides filter).                    |
+| `filter`     | No       | Filter for entities to run check on.                            |
+
+### Messages
+
+Pass messages - `passedMessage` - are displayed to the user when a check passes. Fail messages - `failedMessage` - are displayed to the user
+when a check fails. Messages can be provided as a string or as a markdown string. Pass and fail messages
+also support [Liquid templating](https://liquidjs.com/tutorials/intro-to-liquid.html). The following variables are available for use in templates:
+
+- `entity` - The entity the check was executed on.
+- `facts` - A map of facts used by the check. Individual facts can be looked up in this map by fact reference.
+  For example, `facts['catalog:default/entity_descriptor']`.
+  - If all the facts used by the check have unique fact names they can be accessed in `facts` by fact name rather than
+    having to use the entire fact reference. For example, if check uses the `catalog:default/entity_descriptor` it can
+    be accessed by `facts['catalog:default/entity_descriptor']` or `facts['entity_descriptor']`.
+  - If only a single fact is used by the check, the fact can be accessed directly. For example, if
+    `catalog:default/entity_descriptor` was the only fact used by the check it can be accessed as `fact` rather than
+    `facts['catalog:default/entity_descriptor']`.
+
+Here is an example of a pass message using templates:
+
+```md
+{{ entity.metadata.name }} has a PagerDuty Integration Key defined.
+```
+
+in this example, Soundcheck would replace `{{ entity.metadata.name }}` with the name of the entity the check was
+executed on.
+
+## Executing Checks
+
+Fact checks are executed by Soundcheck:
+
+1. When a dependent fact is updated.
+2. Via scheduled execution based on frequency and entities.
+3. Manually triggered via the [Checks API](#checks-api).
+
+For more details, refer to the original documentation.
+
+## Examples
+
+```yaml
+---
+- id: has_less_than_ten_open_issues
+  rule:
+    factRef: github:default/repo_details
+    path: $.open_issues
+    operator: lessThan
+    value: 10
+  passedMessage: |
+    Less than 10 open issues
+  failedMessage: |
+    Ten or more open issue(s)
+- id: is_repo_private
+  rule:
+    factRef: github:default/repo_details
+    path: $.private
+    operator: equal
+    value: true
+  passedMessage: |
+    Repo is private
+  failedMessage: |
+    Repo is not private, change repo to private
+- id: default_branch_is_main
+  rule:
+    factRef: github:default/repo_details
+    path: $.default_branch
+    operator: equal
+    value: main
+  passedMessage: |
+    Default banch is main
+  failedMessage: |
+    Change default branch to main
+- id: has_readme_check # The name of the check
+  rule: # How to evaluate this check
+    factRef: scm:default/readme_and_catalog_info_files_exist_fact # The fact data to reference
+    path: $.readme_exists # The path to the field to analyze
+    operator: equal # Indicates the operation to apply
+    value: true # The desired value of the field indicated in path, above.
+- id: has_catalog_info_file_check
+  rule:
+    factRef: scm:default/readme_and_catalog_info_files_exist_fact
+    path: $.catalog_info_exists
+    operator: equal
+    value: true
+- id: has_pagerduty_integration_key
+  rule:
+    factRef: catalog:default/entity_descriptor
+    path: $.metadata.annotations["pagerduty.com/integration-key"]
+    operator: matches
+    value: .+
+  schedule:
+    frequency:
+      cron: '*/5 * * * 1-5'
+    filter:
+      kind: 'Component'
+
+- id: has_description
+  rule:
+    factRef: github:default/repo_details
+    path: $.description
+    operator: matches
+    value: .+
+  passedMessage: |
+    Repo has a description
+  failedMessage: |
+    Repo does not have a description
+```
+
+## REST API
+
+We include a REST API for Checks. See [API Reference](../api.mdx#checks-api) for details.
+
+## Check Result History
+
+By default, Soundcheck retains only the latest result for each check, so that
+the size of the database is a function of the number of entities and the number
+of of checks, rather than the number of check _results_. However, it's possible
+to enable tracking of check result history in order to track the change in check
+results over time.
+
+Soundcheck does not currently provide an API or UI for interacting with check
+result history. However, it's possible for other systems to integrate with check
+result history by reading from the Soundcheck database directly.
+
+### Enabling Check Result History
+
+To enable check result history, set `soundcheck.results.history.enable` to true
+in config:
+
+```yaml title=app-config.yaml
+soundcheck:
+  results:
+    history:
+      enable: true
+```
+
+### Reading Check Result History
+
+Check result history is stored in the `check_result_history` table in the
+Soundcheck database. Unless [overridden in Backstage
+configuration](https://backstage.io/docs/tutorials/configuring-plugin-databases#connection-configuration-per-plugin),
+the Soundcheck database will be part of the main Backstage database, and named
+`backstage_plugin_soundcheck`.
+
+```sql
+SELECT *
+FROM check_result_history
+WHERE entity_ref = 'component:default/example-component';
+```
+
+The table contains the same fields as the (object accepted by the check result
+submission endpoint)[#check-result-schema], along with a unique `check_result_history_id` field and a
+`timestamp` corresponding to the time the result was submitted.

@@ -1,0 +1,525 @@
+---
+title: 'Source Control Management'
+sidebar_position: 1
+---
+
+The Source Control Management (SCM) integration plugin for
+[Soundcheck](https://backstage.spotify.com/plugins/soundcheck/) enables integration with the following source
+control management providers:
+
+- azure
+- bitbucketCloud
+- bitbucketServer
+- gerrit
+- gitea
+- github
+- gitlab
+
+## Prerequisites
+
+### SCM Integrations - Connecting the SCM module to SCM providers
+
+To connect to external providers, an 'integration' must be provided in the main `app-config.yaml` file
+as follows:
+
+```yaml
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}
+```
+
+The above example provides a GitHub integration, with the `host` set to `github.com`. Authentication is provided
+via a token issued from `github.com` for the repository that you'd like to connect to.
+
+Consult the [Backstage GitHub integration instructions](https://backstage.io/docs/integrations/github/locations) for full configuration details.
+
+### Add the ScmFactCollector to Soundcheck
+
+Source Control Management integration for Soundcheck is not installed by default. It must be manually installed and configured.
+
+First, add the `@spotify/backstage-plugin-soundcheck-backend-module-scm` package:
+
+```bash
+yarn workspace backend add @spotify/backstage-plugin-soundcheck-backend-module-scm
+```
+
+Then, in `packages/backend/src/plugins/soundcheck.ts`, add the `ScmHubFactCollector`:
+
+```diff
+  import { SoundcheckBuilder } from '@spotify/backstage-plugin-soundcheck-backend';
+  import { Router } from 'express';
+  import { PluginEnvironment } from '../types';
++ import { ScmFactCollector } from '@spotify/backstage-plugin-soundcheck-backend-module-scm';
+
+  export default async function createPlugin(
+    env: PluginEnvironment,
+  ): Promise<Router> {
+    return SoundcheckBuilder.create({ ...env })
++     .addFactCollectors(
++       ScmFactCollector.create(env.config, env.logger),
++     )
+      .build();
+  }
+```
+
+Consult the the [Soundcheck Backend documentation](https://spotify.github.io/spotify-for-backstage-docs/soundcheck/setup-and-installation#backend-setup) for additional details on setting up the Soundcheck backend.
+
+### Adding SCM Entities
+
+To use Source Control Management (SCM) integrations, an entity hosted by an SCM provider is needed.
+As an example, an entity could be added to the catalog with a `type` set to `url` and a `target` set to the entity's hosted location, like so:
+
+```yaml
+catalog:
+  locations:
+    # Soundcheck external demo
+    - type: url # Denotes SCM entities.
+      target: https://github.com/your_repo/blob/main/all-components.yaml
+```
+
+The configuration above adds a component hosted by `github.com` and configured by the target `yaml`
+file.
+
+## Configuring the SCM Module
+
+The facts to be collected by the Source Control Management (SCM) module must be defined in one or more `yaml` files, and then
+referenced in the Soundcheck configuration in the `app-config.yaml` file, like so:
+
+```yaml
+soundcheck:
+  collectors:
+    scm:
+      - $include: ./scm-fact-extraction-configurations.yaml
+      - $include: ./more-scm-fact-extraction-configurations.yaml
+      - $include: ./even-more-scm-fact-extraction-configurations.yaml
+```
+
+With an [SCM entity in your catalog](#adding-scm-entities), an [SCM integration](#scm-integrations---connecting-the-scm-module-to-scm-providers) set, and SCM
+configuration files added to the `soundcheck.collectors.scm` field, your Backstage instance is almost ready to extract facts from SCM providers.
+
+The next section covers how to set up the fact extraction configuration files to extract facts from
+SCM.
+
+## SCM Fact Extraction Configuration
+
+The **SCM Fact Collector** configuration `yaml` files have the following structure:
+
+```yaml
+frequency:
+  cron: '0 * * * *' # Defines a schedule for when the facts defined in this file should be collected
+  # This is optional and if omitted, facts will only be collected on demand.
+filter: # A filter specifying which entities to collect the specified facts for
+  kind: 'Component'
+cache: # Defines if the collected facts should be cached, and if so for how long
+  duration:
+    hours: 2
+collects: # An array of fact extractor configuration describing how to collect SCM facts.
+  - SCM Fact Extractor Configuration One
+  - SCM Fact Extractor Configuration Two
+  - ...
+  - SCM Fact Extractor Configuration N
+```
+
+Below are the details for each field.
+
+#### `frequency` [Optional]
+
+The frequency at which the collector should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+This is the default frequency for each extractor.
+
+#### `filter` [Optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+This is the default filter for each extractor.
+
+#### `cache` [Optional]
+
+If the collected facts should be cached, and if so for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+This is the default cache config for each extractor.
+
+#### `collects`
+
+An array of SCM Fact Extractor configurations describing how to collect SCM facts. See the section
+below for details on configuring the extractors.
+
+## SCM Fact Extractors
+
+The [Exists](#exists-fact-extractor), [RegEx](#regex-fact-extractor), and [JSON/YAML](#jsonyaml-fact-extractor) Source Control Management (SCM) fact extractor configurations are described in detail below. Before going into the detailed schemas of the individual fact extractors, the base schema that they all share will be covered first.
+
+### Common Fact Extractor Schema
+
+All **SCM Fact Extractors** share a common base schema, the variables for which are defined below:
+
+#### `factName`
+
+The name of the fact to be extracted.
+
+- Minimum length of 1
+- Maximum length of 100
+- Alphanumeric with single separator instances of periods, dashes, underscores, or forward slashes
+
+#### `filter` [Optional]
+
+A filter specifying which entities to collect the specified facts for. Matches the [filter format](https://backstage.io/docs/reference/catalog-client.entityfilterquery) used by the Catalog API.
+If provided, it overrides the default filter provided at the top level. If not provided, it defaults to the filter provided at the top level. If neither extractor's filter, nor default filter is provided, the fact will be collected for all entities.
+
+#### `cache` [Optional]
+
+If the collected facts should be cached, and if so for how long. Possible values are either `true` or `false` or a nested `{ duration:` [HumanDuration](https://backstage.io/docs/reference/types.humanduration) `}` field.
+If provided, it overrides the default cache config provided at the top level. If not provided, it defaults to the cache config provided at the top level. If neither extractor's cache, nor default cache config is provided, the fact will not be cached.
+Example:
+
+```yaml
+cache:
+  duration:
+    hours: 24
+```
+
+#### `frequency` [optional]
+
+The frequency at which the fact extraction should be executed. Possible values are either a cron expression `{ cron: ... }` or [HumanDuration](https://backstage.io/docs/reference/backend-tasks.humanduration).
+If provided, it overrides the default frequency provided at the top level. If not provided, it defaults to the frequency provided at the top level. If neither extractor's frequency, nor default frequency is provided, the fact will only be collected on demand.
+
+Example:
+
+```yaml
+frequency:
+  minutes: 10
+```
+
+#### `branch` [optional]
+
+The branch to extract the fact from. If not provided, defaults to the repository's default branch.
+
+### Exists Fact Extractor
+
+The Exists Fact Extractor collects information on whether a given set of files exists in
+the SCM provider. The extensions to the base schema are as follows:
+
+#### `type`
+
+Must be exactly `exists`, like so:
+
+```yaml
+type: exists
+```
+
+#### `data`
+
+The data collected for this fact. This is an array consisting of two pairs of `name` and `path`:
+
+- `name`: An identifier for the data element.
+- `path`: The path to the file.
+
+Both `name` and `path` are subject to the naming restrictions of [factName](#factname).
+
+#### Sample Exists Configuration
+
+Here's a sample `yaml` configuration for a fact that gets information on the
+existence of two files, `README.md` and `catalog-info.yaml`:
+
+```yaml
+collects:
+  - factName:
+      readme_and_catalog_info_files_exist_fact # This gives this fact an identifier which is
+      # used to refer to the fact in other
+      # configuration files.
+    type: exists # This identifies the type of fact to collect.
+    data: # This defines the data element which will be returned in the
+      # fact object when the fact is collected.
+      - name: readme_exists # Label for the data element.
+        path: /README.md # The file for which existence will be determined.
+      - name: catalog_info_exists # Label for the data element.
+        path: /catalog-info.yaml # The file for which existence will be determined.
+    filter: # A filter to narrow the applicability of this fact.
+      metadata.name:
+        soundcheck-external-demo # This filter makes this fact applicable only to the
+        # component with the given name, in this case
+        # 'soundcheck-external-demo'
+```
+
+The checks that will compare the data collected by this fact to the expected outcomes is specified
+in the `app-config.yaml` file. Since this fact collects two data elements, there will be
+two checks that check the value of each data element. The two checks would look like this:
+
+```yaml
+soundcheck:
+  checks:
+    - id: has_readme_check # The name of the check
+      rule: # How to evaluate this check
+        factRef: scm:default/readme_and_catalog_info_files_exist_fact # The fact data to reference
+        path: $.readme_exists # The path to the field to analyze
+        operator: equal # Indicates the operation to apply
+        value: true # The desired value of the field indicated in path, above.
+    - id: has_catalog_info_file_check
+      rule:
+        factRef: scm:default/readme_and_catalog_info_files_exist_fact
+        path: $.catalog_info_exists
+        operator: equal
+        value: true
+```
+
+Finally, these two checks need to be listed in a program level `ordinal` within the `soundcheck-programs.yaml` file. Here's an example:
+
+```yaml
+- id: demo
+  name: Demo
+  ownerEntityRef: group:default/owning_group
+  description: >
+    Demonstration of Soundcheck Exists Fact Extractor
+  levels:
+    - ordinal: 1
+      name: First level
+      description: Checks leveraging Soundcheck's SCM Exists Fact Extractor
+      checks:
+        - id: has_catalog_info_file_check # The identifier for the check.
+          name: Has catalog-info.yaml # A human-readable name for this check
+          description:
+            > # The description to display on the Soundcheck page for this check.
+            Repositories should contain a catalog-info.yaml file.
+        - id: has_readme_check
+          name: Has README.md
+          description: |
+            Repositories should provide a README.md file at root.
+```
+
+### RegEx Fact Extractor
+
+The RegEx Fact Extractor collects information about the contents of a file. Two modes are supported:
+
+- [True/False Mode](#truefalse-mode)
+- [RegEx Capture Groups Mode](#regex-capture-groups-mode)
+
+###### True/False Mode
+
+True/False Mode uses a RegEx, or Regular Expression, to search for a match in a specified file. If a RegEx
+match is found, the resulting fact data will contain a value of `true` for a field named `matches`. If not, the
+`matches` field will contain a value of `false`.
+
+###### RegEx Capture Groups Mode
+
+Using RegEx Capture Groups Mode allows the extractor to associate capture groups within a RegEx
+to named values. This allows checks to verify that the captured values are correct.
+
+#### RegEx Fact Extractor Schema
+
+The extension schema for RegEx Fact Extractors is as follows:
+
+#### `type`
+
+Must be exactly `regex`, like so:
+
+```yaml
+type: regex
+```
+
+#### `path`
+
+The path to the file to analyze.
+
+#### `regex`
+
+A valid RegEx string. This string is used on the file to collect data elements or to provide a `true`/`false` response corresponding to whether there is a match for the RegEx or not in the file.
+
+#### `data` [Optional]
+
+Defines the data to collect for this fact. This is an array consisting of two pairs of `name` and
+`type`:
+
+- `name`: An identifier for the data element. Subject to the naming restrictions of
+  [factName](#factname).
+- `type`: The expected type of data to be collected.
+
+Each pair defined in the data field _must_ correspond to a capture group in the given `regex`. A mismatch between data element definition counts and RegEx Capture Groups is an error. Fact
+data will not be collected. 
+
+If the data element is not present, the mode of the RegEx Fact Extractor defaults to [True/False Mode](#truefalse-mode).
+
+#### Sample RegEx Configuration
+
+The `yaml` below defines both modes of the RegEx Extractor, [True/False Mode](#truefalse-mode) and [RegEx Capture Groups Mode](#regex-capture-groups-mode).
+
+Sample fact definitions are as follows:
+
+```yaml
+collects:
+  - factName: apache_license_fact # Name of the fact
+    type: regex # Type of the fact
+    path: /LICENSE.md # Path to the file whose contents will be searched
+    regex: .*Apache License.*Version 2\.0.* # Regex to match.
+    # Note lack of any 'data:' object definition, this implies this regex is a true/false type.
+
+  - factName: api_version_fact
+    type: regex
+    path: /catalog-info.yaml
+    regex:
+      '^apiVersion: backstage.io/(.+)' # Note the capture group! Each capture group in a regex
+      # *must* correspond to a named data element, see below.
+    data: # Data describing each capture group
+      - name: captured_api_version # The name of the first capture group
+        type: string # The type of the first capture group.
+```
+
+With fact collection specified, we must now define checks against the data that will be collected
+for each fact. We define the checks in the `app-config.yaml` file. Here are sample checks that correspond to
+the RegEx facts above:
+
+```yaml
+soundcheck:
+  checks:
+    - id: uses_recommended_license_check # ID for this check
+      rule: # How to evaluate this check
+        factRef: scm:default/apache_license_fact # The fact data to reference
+        path:
+          $.matches # The path to the field to analyze, note that this is always 'matches' for a
+          # true/false type regex.
+        operator: equal # Indicates the operation to apply
+        value:
+          true # The desired value of path field, above. True here indicates
+          # that, indeed, we want to have found the 2.0 apache license version in the
+          # given file.
+
+    - id: api_version_check
+      rule:
+        factRef: scm:default/api_version_fact
+        path:
+          $.captured_api_version # This path refers to the name given to the capture group in
+          # the fact definition.
+        operator: equal
+        value:
+          v1alpha1 # This is the value we expect to have captured via the regex for this
+          # capture group. This can be any string.
+```
+
+Finally, the checks defined above must be present in the `soundcheck-programs.yaml` file under an appropriate program level `ordinal` of a program. Here's an example:
+
+```yaml
+---
+- id: demo
+  name: Demo
+  ownerEntityRef: group:default/owning_group
+  description: >
+    Demonstration of Soundcheck Regex Fact Extractor
+  levels:
+    - ordinal: 1
+      name: First level
+      description: Checks leveraging Soundcheck's SCM Regex Fact Extractor
+      checks:
+        - id: uses_recommended_license_check # Check ID to include
+          name: Uses Apache License 2.0 # Human-readable name for this check.
+          description: |
+            Use of the Apache License 2.0 is required.
+        - id: api_version_check
+          name: Has correct API version
+          description: >
+            "Ensures that the component is using the correct api version, which is
+            v1alpha1".
+```
+
+### JSON/YAML Fact Extractor
+
+The final fact extractor type supported by the Source Control Management (SCM) plugin is the JSON/YAML Fact Extractor. It works similarly to the [RegEx Fact Extractor](#regex-fact-extractor) in that it extracts `json`/`yaml` values from a file for use in checks.
+
+#### JSON/YAML Fact Extractor Schema
+
+The extension schema for JSON/YAML Fact Extractors is as follows:
+
+#### `type`
+
+Must be one of `json` or `yaml`, like so:
+
+```yaml
+type: json
+```
+
+#### `path`
+
+The path to the file to analyze.
+
+#### `data`
+
+Defines the data to collect for this fact. This is an array of the following fields:
+
+- `name`: An identifier for the data element.
+  Subject to the naming restrictions of [factName](#factname).
+- `type`: The expected type of data to be collected, either `array` or a primitive type
+  (`string`, `int`, etc.)
+- `jsonPath`: A period delimited path to the desired `json`/`yaml` element.
+- `items`: A optional field with a single `type` property. If included, the data returned by the
+  fact will be an array of all matching elements of the specified type. If omitted, the
+  returned value will be a single element.
+
+#### Sample JSON/YAML Configuration
+
+The `yaml` below defines both collection types performed by the JSON/YAML Extractor: single element capture and array
+capture.
+
+Sample fact definitions are as follows:
+
+```yaml
+collects:
+  - factName: entity_metadata_fact # Name of the fact
+    type: json # Type of the fact
+    path: /catalog-info.yaml # Path to the file whose contents will be searched
+    data: # Data describing the file contents collected at each jsonPath
+      - name: tags # Name for this entry in the data element.
+        jsonPath: metadata.tags # Path from which to pull data from the file.
+        type: array # Type of element, array or primitive.
+        items: # For the array type, this items specification and the type of the items is required.
+          type: string
+      - name: pager_duty_integration_key
+        jsonPath: metadata.annotations.pagerduty_integration-key
+        type: string # For non-array captures, just the type of the data is required.
+```
+
+The above `data` specifications correspond to the two types supported by this extractor, arrays
+and strings, respectively. The `jsonPath` of `metadata.tags` will be extracted into an array named `tags`
+of type `string`. The `jsonPath` of `metadata.annotations.pagerduty_integration-key` will be extracted into a
+variable called `pager_duty_integration_key` of type `string`.
+
+The checks for the fact data extracted by the fact specification above could be as follows:
+
+```yaml
+soundcheck:
+  checks:
+    - id: entity_metadata_tags_check # ID of this check
+      rule: # How to evaluate this check
+        factRef: scm:default/entity_metadata_fact # The fact data to reference
+        path: $.tags # The path to the data in the collected fact's 'data' element
+        operator: notEqual # The operation to apply
+        value: undefined # The value to compare with the extracted value.
+    - id: entity_metadata_key_check
+      rule:
+        factRef: scm:default/entity_metadata_fact
+        path: $.pager_duty_integration_key
+        operator: equal
+        value: 12345
+```
+
+This defines two checks. The first check ensures that the `tags` array is not `undefined` in the file,
+meaning that there are tags present. The second check ensures that the `pager_duty_integration_key` is in the
+file and that it is equal to the given value.
+
+Finally, these two checks are added to the `soundcheck-program.yaml` file, under an appropriate program level `ordinal`. Here's an example:
+
+```yaml
+- id: demo
+  name: Demo
+  ownerEntityRef: group:default/owning_group
+  description: >
+    Demonstration of Soundcheck Regex Fact Extractor
+  levels:
+    - ordinal: 1
+      name: First level
+      description: Checks leveraging Soundcheck's SCM Regex Fact Extractor
+      checks:
+        - id: entity_metadata_tags_check
+          name: Entity Metadata Tags Check
+          description: Check that metadata tags are present.
+        - id: entity_metadata_key_check
+          name: Entity Metadata Key Check
+          description: Check that the pager duty key is correct.
+```
+
+Adding both checks to the `soundcheck-programs.yaml` means that they must pass for the corresponding program and level to be considered as *passing*.

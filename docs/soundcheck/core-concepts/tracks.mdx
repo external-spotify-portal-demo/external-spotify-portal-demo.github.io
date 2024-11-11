@@ -1,0 +1,325 @@
+---
+title: 'Tracks'
+sidebar_position: 2
+---
+
+import { Badge } from '../components/badge';
+
+Tracks are composed of levels, checks and certifications. Tracks encourage alignment to architectural best practices and standards and are analogous to an organization’s long-term tech health initiatives.
+Tracks are composed of one or more levels, and each level is composed of one or more checks.
+Each level of checks sets the standard for an organization and how they want to determine what passes and what fails in the individual track.
+
+![Soundcheck Tracks](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-tracks.png)
+
+## Managing tracks via the no-code UI
+
+### Creating a new track
+
+To create a track, give your track a meaningful name and a description, and select the filters and checks that you want to use.
+
+![Soundcheck Create Track](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-create-track.png)
+
+Filters allow a user further customization for their tracks to only be applicable to specific entities in the Software Catalog. This allows users to tie their tracks to specific tags such as “Java”, “service” or “production” to name a few. You can have as many or as few selections per type as you want to include in each track. Each type of filter will display a dropdown menu with your choice for selection. You can select any number of filters per section as desired.
+
+Checks are searchable, and can be dragged-and-dropped from the list of checks into the level(s) of the track. Levels can be added to a track with the “+ Add Level” button shown above. Organizing checks into levels allows for a more nuanced read of what checks cleared and which ones didn’t. Most use levels by order of difficulty to clear, where level one means hardest to pass, level two is medium hard to pass, and level three is relatively easy to pass.
+
+### Editing a track
+
+Once a track is created, you will be able to manage and edit your track on its detail page. From the tracks listing page, you will see an option to edit your track, which will bring you to the details page shown below.
+
+![Soundcheck Edit Track](https://spotify-plugins-for-backstage-readme-images.spotifycdn.com/soundcheck-edit-track.png)
+
+As with checks, you can make as many changes as desired when editing tracks. Just make sure to save your track in order for changes to take effect. Also, similar to checks,, editing a track and saving will immediately reflect onto anything that has been assigned to said track.
+
+## Managing tracks via yaml configuration
+
+Tracks can be created in code via yaml configuration files.
+
+### Overall Shape Of A Track
+
+The following is an example of a descriptor file for a Soundcheck Track (more [examples](#examples)):
+
+```yaml
+- id: test-certified
+  name: Test Certified
+  ownerEntityRef: group:default/example-owner
+  description: >
+    Improve quality and reliability of your software component by measuring the use of testing best practices.
+  documentationURL: https://www.backstage.io
+  filter:
+    catalog:
+      metadata.tags: python
+  levels:
+    - ordinal: 1
+      checks:
+        - id: python_service_runs_tests
+          name: The python service runs pytest
+          description: >
+            This service is currently running pytest as part of its GitHub actions workflow as defined in the build.yaml
+    - ordinal: 2
+      checks:
+        - id: github_actions_tests_passing
+          name: CI/CD Tests passing
+          description: >
+            The last tests run in GitHub Actions was successful.
+```
+
+See below for details about these [fields](#track-fields).
+
+### Adding yaml tracks to your track library
+
+To add tracks defined in a yaml file to your track library, you need to source them in you `app-config.yaml`. You have the option of storing them locally or remotely.
+
+Here is an example configuration should your tracks yaml files be local to your Backstage project:
+
+```yaml title=app-config.yaml
+soundcheck:
+  programs:
+    - $include: ./path-to-local-folder/tracks-file-1.yaml
+    - $include: ./path-to-local-folder/tracks-file-2.yaml
+    - $include: ./path-to-local-folder/tracks-file-3.yaml
+```
+
+To maintain your tracks files in a remote repo, you can source them in `app-config.yaml` in a similar manner. Here is an example configuration:
+
+```yaml title=app-config.yaml
+soundcheck:
+  programs:
+    - https://github.com/user/repo/blob/main/tracks-file-1.yaml
+    - https://github.com/user/repo/blob/main/tracks-file-2.yaml
+    - https://github.com/user/repo/blob/main/tracks-file-3.yaml
+  remote_file_updates:
+    disabled: false
+    frequency:
+      minutes: 5
+```
+
+> Note: you cannot combine local and remote sourcing for tracks files. This includes the usage of `$include` within a remotely sourced tracks file. The below option will NOT work:
+
+```yaml title=app-config.yaml
+soundcheck:
+  programs:
+    - https://github.com/user/repo/blob/main/tracks-file-1.yaml
+    - https://github.com/user/repo/blob/main/tracks-file-2.yaml
+    - $include: ./path-to-local-folder/tracks-file-3.yaml
+```
+
+#### Remote file update options
+
+The `remote_file_updates` object is optional configuration allowing you to control if and when Soundcheck looks for updates within your remote files. This configuration is global for Soundcheck, so will apply to both track and check files. If not explicitly set, see the below for default values.
+
+| Key         | Default    | Description                                                                                                                                                                                                             |
+| ----------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `disabled`  | false      | Enables Soundcheck to look for updates in remote files                                                                                                                                                                  |
+| `frequency` | minutes: 5 | The frequency at Soundcheck will look for updates in remote files. Possible values are either a cron expression `{ cron: ... }` or [`HumanDuration`](https://backstage.io/docs/reference/backend-tasks.humanduration/). |
+
+## Track Fields
+
+The Track object is composed of some top level summary fields as well as more complex nested fields for filters and levels.
+
+| Field              | Required | Description                                                                         |
+| ------------------ | -------- | ----------------------------------------------------------------------------------- |
+| `id`               | Yes      | Unique identifier for this particular Soundcheck Track.                             |
+| `name`             | Yes      | Human-readable identifier for this particular Soundcheck Track.                     |
+| `description`      | Yes      | Additional details about the motivation behind this set of checks.                  |
+| `ownerEntityRef`   | Yes      | Relates this Soundcheck Track to the person or team responsible for maintaining it. |
+| `documentationURL` | No       | Link users can follow for more details about this track.                            |
+| `group`            | No       | Connects logically similar but functionally disjoint tracks into groups.            |
+| `filter`           | No       | Specifies the type of entities that a particular track applies to.                  |
+| `levels`           | Yes      | Offers an additional layer of specificity on top of the track definition.           |
+
+### Example
+
+## Level Fields
+
+The `level` object is composed of several top-level summary fields and a repeated check definition field.
+
+| Field         | Required | Description                                                                 |
+| ------------- | -------- | --------------------------------------------------------------------------- |
+| `ordinal`     | Yes      | Uniquely identifies a particular level within a track.                      |
+| `name`        | No       | Provides a human-readable title for the level.                              |
+| `description` | No       | Allows further expression regarding the purpose of a level.                 |
+| `checks`      | Yes      | Specifies all the checks an entity must pass to be certified at this level. |
+
+## Check Fields
+
+The `check` object defines the atomic unit of work within the Soundcheck certification process.
+
+| Field         | Required | Description                                                                |
+| ------------- | -------- | -------------------------------------------------------------------------- |
+| `id`          | Yes      | Links this definition to the actual check results.                         |
+| `name`        | Yes      | Provides the human-readable title for this check.                          |
+| `description` | Yes      | Provides additional context on the motivation and implementation of check. |
+| `filter`      | No       | Allows further filtering of checks within a track definition.              |
+
+## Entity Filter
+
+`Filter` objects narrow down applicability for both tracks and checks. Currently, Soundcheck supports filtering based on the shape of a [Software Catalog Entity](https://backstage.io/docs/features/software-catalog/descriptor-format).
+
+### CatalogFilter
+
+`CatalogFilter`s consist of a map of `FilterKey` to `FilterValue`, and an `Entity` matches a `CatalogFilter` if every entry in the filter matches the `Entity`.
+
+| Field         | Description                                                                          |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `FilterKey`   | Represents specific subsets of fields within the Software Catalog Entity descriptor. |
+| `FilterValue` | Represents patterns for entity matching.                                             |
+
+### FilterKey
+
+`FilterKey`s represent specific subsets of fields within the Software Catalog Entity descriptor, categorized as follows:
+
+| Type   | Description                                                                                           |
+| ------ | ----------------------------------------------------------------------------------------------------- |
+| String | 'kind', 'spec.type', 'spec.lifecycle', 'spec.owner', 'spec.system'                                    |
+| Array  | 'metadata.tags'                                                                                       |
+| Record | 'metadata.annotations' (e.g., 'metadata.annotations["backstage.io/techdocs-ref"]'), 'metadata.labels' |
+
+### FilterValue
+
+`FilterValue`s represent patterns for entity matching:
+
+| Type     | Description                                                                                               |
+| -------- | --------------------------------------------------------------------------------------------------------- |
+| String   | Checks if the Entity property specified by the corresponding `FilterKey` matches the provided value.      |
+| Array    | Checks if the Entity property specified by the corresponding `FilterKey` matches any string in the array. |
+| Presence | Tests presence/absence of a `FilterKey` in an `Entity`.                                                   |
+
+### Examples
+
+#### String
+
+Soundcheck checks whether the Entity property specified by the `FilterKey` matches the provided string value (case insensitive).
+
+```yaml
+filter:
+  catalog:
+    spec.lifecycle: 'production'
+```
+
+#### Array Example
+
+Soundcheck checks whether the Entity property specified by the `FilterKey` matches any of the strings in the provided array value (case insensitive).
+
+```yaml
+filter:
+  catalog:
+    spec.type: ['service', 'website']
+```
+
+#### Presence
+
+ValueMatcher `FilterValue`s test for the presence or absence of a particular `FilterKey` in an `Entity`. `*` considers any value (except undefined) a match, and `!*` only matches missing or undefined values.
+
+```yaml
+filter:
+  catalog:
+    metadata.annotations["backstage.io/techdocs-ref"]: { match: '*' }
+    metadata.annotations["wikipedia.org"]: { match: '!*' }
+```
+
+## Integrating with Soundcheck
+
+Soundcheck enables developers to evaluate software components against standards through the creation of tracks, levels, and checks.
+
+## Fact Framework
+
+Soundcheck's fact framework collects information about an entity using Fact Collectors or the Facts API.
+
+### Fact Collectors
+
+| Collector  | Description                                                    |
+| ---------- | -------------------------------------------------------------- |
+| Catalog    | Collects facts from Backstage's Software Catalog as fact data. |
+| Soundcheck | Exposes Soundcheck track certifications as facts.              |
+
+#### Third Party Integrations
+
+| Integration                     | Description                                                    |
+| ------------------------------- | -------------------------------------------------------------- |
+| Source Control Management (SCM) | Provides integration with source control management providers. |
+| GitHub                          | Enables gathering facts regarding GitHub repositories.         |
+
+## Fact Checks
+
+Fact checks define rules that determine whether a check result should pass or fail.
+
+| Field         | Description                                       |
+| ------------- | ------------------------------------------------- |
+| `id`          | Unique identifier for this fact check.            |
+| `name`        | A name for the fact check suitable for display.   |
+| `description` | A description of the fact check.                  |
+| `rule`        | Conditions that determine check pass/fail.        |
+| `schedule`    | How often and on which entities to run the check. |
+
+### Executing Checks
+
+Fact checks are executed, or triggered, by Soundcheck in the following ways:
+
+1. A dependent fact is updated, either through fact collectors or, or via the [Facts API](/spotify-for-backstage-docs/soundcheck/core-concepts/fact-collectors#facts-api).
+2. A fact check is scheduled, in which case Soundcheck will automatically execute the check on the specified frequency.
+3. A fact check is manually triggered via the [Checks API](/spotify-for-backstage-docs/soundcheck/core-concepts/checks#checks-api).
+
+## REST API
+
+We include a REST API for Tracks. See [API Reference](../api.mdx#track-api) for details.
+
+## Certifications
+
+<Badge label='L1' background='rgb(224, 112, 0)' />
+<Badge label='L2' background='rgb(204, 204, 204)' />
+<Badge label='L3' background='rgb(255, 193, 33)' />
+
+Certifications and badges incentivize Engineers to complete levels through Gamification.
+Component owners can achieve bronze, silver, and gold badges upon completion of related levels.
+
+### Certification History
+
+By default, Soundcheck certifies entities against their applicable tracks on demand,
+so that certifications (the highest level of the track that has all checks passing) are
+never stored in the database. However, it's possible to enable tracking of certification
+history in order to track the change in the highest certified levels for every entity and
+their applicable tracks over time.
+
+Soundcheck does not currently provide an API for interacting with certification history.
+However, the certification history data is used by Soundcheck Tech Health page
+to visualize snapshots and trends of the highest certified levels for every entity and
+their applicable tracks. It's also possible for other systems to integrate with certification
+history by reading from the Soundcheck database directly.
+
+#### Enabling Certification History
+
+To enable check result history, set `soundcheck.certifications.history.enable` to true
+in config:
+
+```yaml title=app-config.yaml
+soundcheck:
+  certifications:
+    history:
+      enable: true
+```
+
+#### Reading Certification History
+
+Certification history is stored in the `certification_history` table in the
+Soundcheck database. Unless [overridden in Backstage
+configuration](https://backstage.io/docs/tutorials/configuring-plugin-databases#connection-configuration-per-plugin),
+the Soundcheck database will be part of the main Backstage database, and named
+`backstage_plugin_soundcheck`.
+
+```sql
+SELECT *
+FROM certification_history
+WHERE entity_ref = 'component:default/example-component';
+```
+
+#### Certification History Schema
+
+- `certification_id` - Unique identifier for the certification (primary key).
+- `entity_ref` - Entity reference that the certification relates to.
+- `owner_entity_ref` [optional] - Software catalog entity that owns the entity this certification is for.
+- `track_id` - Unique identifier for the track this certification is for.
+- `scope` - The scope of check results this certification was created for.
+- `highest_level` [optional] - Rank of the highest certified level. Null if no level is certified.
+- `certification_date` - The date of the certification.
+- `last_updated` - The timestamp indicating the date and time when the certification was last updated.
