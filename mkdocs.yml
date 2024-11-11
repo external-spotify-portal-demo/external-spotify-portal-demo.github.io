@@ -1,0 +1,12 @@
+site_name: Documentation Website
+
+nav:
+  - Home: getting-started.md
+  - Docs:
+      - Overview: docs/overview.md
+      - Setup: docs/setup.md
+      - Features: docs/features.md
+      - API Reference: docs/api-reference.md
+plugins:
+  - search
+  - mkdocs-material
