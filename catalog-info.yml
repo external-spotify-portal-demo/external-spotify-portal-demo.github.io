@@ -1,0 +1,10 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: plugin-documentation-website
+  # This is an extra long description with Markdown
+  description: Documentation website for our plugins
+spec:
+  type: website
+  lifecycle: production
+  owner: kubecon-squad
