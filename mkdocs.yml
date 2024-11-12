@@ -8,5 +8,4 @@ nav:
       - Features: docs/features.md
       - API Reference: docs/api-reference.md
 plugins:
-  - search
-  - mkdocs-material
+  - techdocs-core
