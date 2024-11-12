@@ -3,8 +3,6 @@ sidebar_position: 2
 title: 'RBAC'
 ---
 
-import ReactPlayer from 'react-player';
-
 ## What does RBAC help me do?
 
 The RBAC plugin works with the [Backstage permission framework](https://backstage.io/docs/permissions/overview) to provide support for role-based access control in Backstage. The Backstage permission framework is a system in the open-source Backstage project, which allows granular control of access to specific resources or actions. The permission framework is currently supported in the Catalog and TechDocs, with other core features soon to come. In the future, we’ll encourage third-party plugin authors to add permission support too — which can be done without changes to the Backstage core.
@@ -17,11 +15,5 @@ With the RBAC plugin, you manage the permissions in your Backstage instance by a
 
 ## Demo
 
-<ReactPlayer
-  controls
-  url='https://21894833.fs1.hubspotusercontent-na1.net/hubfs/21894833/Pre-recorded%20Demos/rbac-1.mp4'
-/>
-
-<br />
 
 Learn more about our [RBAC plugin](https://backstage.spotify.com/plugins/rbac)

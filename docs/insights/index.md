@@ -3,7 +3,6 @@ sidebar_position: 4
 title: 'Insights'
 ---
 
-import ReactPlayer from 'react-player';
 
 ## What does Insights help me do?
 
@@ -32,12 +31,5 @@ Unlike many other plugins in the Spotify Plugins for Backstage bundle, Insights 
 At Spotify, we prioritize data security and privacy. All data collected by Backstage Insights remains within the European Union (EU), ensuring compliance with data residency regulations. Access to your data is strictly limited to the team working on Backstage Insights, providing you with complete control over who can access the data within your organization. Rest assured that your data is safe with us.
 
 ## Demo
-
-<ReactPlayer
-  controls
-  url='https://21894833.fs1.hubspotusercontent-na1.net/hubfs/21894833/Pre-recorded%20Demos/Insights-1.mp4'
-/>
-
-<br />
 
 Learn more about our [Insights plugin](https://backstage.spotify.com/plugins/insights)
